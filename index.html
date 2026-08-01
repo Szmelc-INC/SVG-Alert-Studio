@@ -1,0 +1,3922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Markdown Alert → SVG Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Generate beautiful GitHub-style SVG alert cards for your README.md files. Supports markdown, syntax highlighting, and multiple export formats." />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --accent: #3fb950;
+      --accent-hover: #2ea043;
+      --header-bg: #010409;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --glow: 0 0 20px rgba(63, 185, 80, 0.15);
+      --radius: 10px;
+      --transition: 0.2s ease;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── NAVBAR ─── */
+    .navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      height: 48px;
+      min-height: 48px;
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+      gap: 8px;
+    }
+
+    .nav-left, .nav-center, .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-brand {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+      margin-right: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-btn {
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(33, 38, 45, 0.7);
+      color: var(--text);
+      padding: 5px 12px;
+      font: 12px/1 var(--font-ui);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all var(--transition);
+      white-space: nowrap;
+      backdrop-filter: blur(4px);
+    }
+    .nav-btn:hover {
+      background: var(--border);
+      border-color: #484f58;
+      transform: translateY(-1px);
+    }
+    .nav-btn.primary {
+      border-color: var(--accent);
+      background: rgba(35, 134, 54, 0.8);
+      color: #fff;
+    }
+    .nav-btn.primary:hover {
+      background: var(--accent-hover);
+      box-shadow: var(--glow);
+    }
+
+    .nav-link {
+      text-decoration: none;
+    }
+
+    /* ─── MAIN LAYOUT ─── */
+    .app-layout {
+      flex: 1;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(2, 4, 10, 0.4);
+      flex-shrink: 0;
+    }
+    .panel-header h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8b949e;
+      font-weight: 600;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    /* Panel: Preview (top-left) */
+    .panel-preview {
+      grid-row: 1;
+      grid-column: 1;
+    }
+
+    #preview-box {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+      min-height: 100%;
+      background: repeating-conic-gradient(#1a1f27 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+    }
+    #preview svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 4px 16px rgba(0,0,0,0.3));
+    }
+
+    /* Panel: SVG Markup (top-right) */
+    .panel-code {
+      grid-row: 1;
+      grid-column: 2;
+    }
+
+    /* Code editor with syntax highlight overlay */
+    .code-editor {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background: #0d1117;
+    }
+    .code-highlight {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      margin: 0;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      pointer-events: none;
+      color: #adbac7;
+      tab-size: 2;
+      min-height: 100%;
+      box-sizing: border-box;
+    }
+    #svg-output {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      min-height: 100%;
+      height: 100%;
+      resize: none;
+      border: none;
+      background: transparent;
+      color: transparent;
+      caret-color: #c9d1d9;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+      padding: 12px;
+      outline: none;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      tab-size: 2;
+    }
+    #svg-output.plain-text {
+      color: #adbac7;
+      background: #0d1117;
+    }
+    #svg-output::selection {
+      background: rgba(56, 139, 253, 0.35);
+      color: transparent;
+    }
+    #svg-output.plain-text::selection {
+      color: #adbac7;
+    }
+    #svg-output:not([readonly]) {
+      /* editable mode still uses highlight overlay when not plain */
+    }
+    .markup-png-view {
+      display: none;
+      width: 100%;
+      height: 100%;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: repeating-conic-gradient(#1a1f27 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+      overflow: auto;
+    }
+    .markup-png-view.active {
+      display: flex;
+    }
+    .markup-png-view img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 4px 16px rgba(0,0,0,0.3));
+    }
+    .code-editor.hidden { display: none; }
+
+    /* Syntax highlight tokens */
+    .tok-tag { color: #7ee787; }
+    .tok-name { color: #7ee787; }
+    .tok-attr { color: #79c0ff; }
+    .tok-str { color: #a5d6ff; }
+    .tok-punct { color: #8b949e; }
+    .tok-comment { color: #8b949e; font-style: italic; }
+    .tok-doctype { color: #ffa657; }
+    .tok-entity { color: #ffa198; }
+    .tok-plain { color: #adbac7; }
+
+    /* Manual edit toggle */
+    .toggle-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #8b949e;
+      font-weight: 600;
+    }
+    .toggle-switch input { display: none; }
+    .toggle-track {
+      width: 28px;
+      height: 16px;
+      border-radius: 999px;
+      background: #21262d;
+      border: 1px solid var(--border);
+      position: relative;
+      transition: all var(--transition);
+      flex-shrink: 0;
+    }
+    .toggle-track::after {
+      content: "";
+      position: absolute;
+      top: 1px;
+      left: 1px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #8b949e;
+      transition: all var(--transition);
+    }
+    .toggle-switch input:checked + .toggle-track {
+      background: rgba(35, 134, 54, 0.7);
+      border-color: var(--accent);
+    }
+    .toggle-switch input:checked + .toggle-track::after {
+      left: 13px;
+      background: #fff;
+    }
+    .toggle-switch input:checked ~ .toggle-label,
+    .toggle-switch:has(input:checked) {
+      color: var(--accent);
+    }
+    .panel-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 1px 8px;
+      font-size: 10px;
+      background: rgba(13, 17, 23, 0.6);
+      color: #6e7681;
+    }
+
+    /* Panel: Settings (bottom, full width) */
+    .panel-settings {
+      grid-row: 2;
+      grid-column: 1 / -1;
+      border-top: 2px solid var(--border);
+      max-height: 42vh;
+    }
+
+    .settings-scroll {
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+      padding: 0;
+      align-items: stretch;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .settings-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 14px;
+      border-right: 1px solid var(--border);
+      min-width: 160px;
+      flex-shrink: 0;
+    }
+    .settings-group:last-child { border-right: none; }
+
+    .settings-group-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #484f58;
+      font-weight: 600;
+      margin-bottom: 2px;
+      white-space: nowrap;
+    }
+
+    .s-field {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .s-field label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6e7681;
+      white-space: nowrap;
+    }
+
+    .s-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    textarea,
+    select {
+      background: #0d1117;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font: 12px var(--font-ui);
+      width: 100%;
+      transition: border-color var(--transition);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(63,185,80,0.15);
+    }
+
+    input[type="color"] {
+      padding: 0;
+      border-radius: 4px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      height: 26px;
+      width: 100%;
+      cursor: pointer;
+    }
+
+    textarea#body {
+      resize: none;
+      min-height: 60px;
+      height: 100%;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .preset-grid {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .preset-btn {
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: var(--text);
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+    .preset-btn:hover {
+      background: var(--border);
+      transform: translateY(-1px);
+    }
+
+    .action-btn {
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: var(--text);
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+    .action-btn:hover {
+      background: var(--border);
+      transform: translateY(-1px);
+    }
+    .action-btn.primary {
+      border-color: var(--accent);
+      color: #fff;
+      background: #238636;
+    }
+    .action-btn.primary:hover {
+      background: var(--accent-hover);
+      box-shadow: var(--glow);
+    }
+
+    .action-row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    /* Format toggle (SVG / HTML) */
+    .format-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .format-toggle .action-btn {
+      border: none;
+      border-radius: 0;
+      border-right: 1px solid var(--border);
+      margin: 0;
+      transform: none;
+    }
+    .format-toggle .action-btn:last-child { border-right: none; }
+    .format-toggle .action-btn:hover { transform: none; }
+    .format-toggle .action-btn.active {
+      background: rgba(35, 134, 54, 0.85);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* Icon input + picker button */
+    .icon-input-row {
+      display: flex;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .icon-input-row input { flex: 1; min-width: 0; }
+    .icon-picker-btn {
+      flex-shrink: 0;
+      width: 28px;
+      padding: 0;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition);
+    }
+    .icon-picker-btn:hover {
+      background: var(--border);
+      border-color: #484f58;
+    }
+
+    /* Border side checkboxes */
+    .border-sides {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 8px;
+    }
+
+    /* Densified settings groups */
+    .settings-group.dimensions-group,
+    .settings-group.colors-group,
+    .settings-group.options-group,
+    .settings-group.typography-group {
+      min-width: 200px;
+    }
+    .settings-group.colors-group { min-width: 248px; }
+    .settings-group.dimensions-group { min-width: 268px; }
+    .settings-group.options-group { min-width: 190px; }
+    .settings-group.typography-group { min-width: 200px; }
+
+    /* Compact color chip grid */
+    .chip-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 36px);
+      gap: 8px 10px;
+      justify-content: start;
+    }
+    .chip-grid.cols-5 {
+      grid-template-columns: repeat(5, 36px);
+    }
+    .chip-grid.cols-6 {
+      grid-template-columns: repeat(6, 36px);
+    }
+    .color-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      position: relative;
+      width: 36px;
+      cursor: default;
+    }
+    .color-chip .chip-abbr {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #6e7681;
+      line-height: 1;
+      text-transform: uppercase;
+      user-select: none;
+    }
+    .color-chip input[type="color"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #0d1117;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .color-chip input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    .color-chip input[type="color"]::-webkit-color-swatch {
+      border: none;
+      border-radius: 5px;
+    }
+    .color-chip input[type="color"]::-moz-color-swatch {
+      border: none;
+      border-radius: 5px;
+    }
+    .color-chip:hover input[type="color"] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(63,185,80,0.15);
+    }
+
+    /* Compact number chips */
+    .num-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 52px);
+      gap: 6px 8px;
+      justify-content: start;
+    }
+    .num-grid.cols-3 {
+      grid-template-columns: repeat(3, 52px);
+    }
+    .num-grid.cols-5 {
+      grid-template-columns: repeat(5, 52px);
+    }
+    .num-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      position: relative;
+      width: 52px;
+    }
+    .num-chip .chip-abbr {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: #6e7681;
+      line-height: 1;
+      text-transform: uppercase;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .num-chip input[type="number"],
+    .num-chip select {
+      width: 50px !important;
+      min-width: 0;
+      padding: 3px 2px !important;
+      font-size: 11px !important;
+      text-align: center;
+    }
+    .num-chip select {
+      padding: 3px 0 !important;
+    }
+
+    /* Shared hover tooltip for chips */
+    .color-chip[data-tip]::after,
+    .num-chip[data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 7px);
+      transform: translateX(-50%) translateY(4px);
+      background: #1c2128;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      white-space: nowrap;
+      padding: 4px 8px;
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      z-index: 50;
+    }
+    .color-chip[data-tip]::before,
+    .num-chip[data-tip]::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 2px);
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--border);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.12s ease;
+      z-index: 50;
+    }
+    .color-chip:hover::after,
+    .num-chip:hover::after {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .color-chip:hover::before,
+    .num-chip:hover::before {
+      opacity: 1;
+    }
+
+    .chip-section-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #484f58;
+      margin-top: 4px;
+      margin-bottom: 2px;
+    }
+
+    .nav-btn.danger {
+      border-color: #f85149;
+      color: #ff7b72;
+      background: rgba(248, 81, 73, 0.08);
+    }
+    .nav-btn.danger:hover {
+      background: rgba(248, 81, 73, 0.18);
+      border-color: #ff7b72;
+      color: #ffa198;
+      transform: translateY(-1px);
+    }
+
+    .actionability-warn {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.45);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #ffa198;
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+    .actionability-warn strong { color: #ff7b72; }
+    .act-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 10px;
+    }
+    .act-field label {
+      font-size: 11px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .act-field textarea {
+      min-height: 72px;
+      font-family: var(--mono);
+      font-size: 11px;
+      resize: vertical;
+    }
+    .act-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .font-upload-row {
+      display: flex;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .font-upload-row .action-btn {
+      flex-shrink: 0;
+      padding: 4px 8px;
+    }
+    #local-font-input { display: none; }
+    .local-font-name {
+      font-size: 10px;
+      color: #6e7681;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+    }
+
+    /* Icon picker modal */
+    .modal.modal-wide {
+      max-width: 640px;
+    }
+    .picker-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .picker-tab {
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: var(--text);
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .picker-tab:hover { background: var(--border); }
+    .picker-tab.active {
+      background: rgba(35, 134, 54, 0.85);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .picker-search {
+      margin-bottom: 10px;
+    }
+    .picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+      gap: 4px;
+      max-height: 360px;
+      overflow-y: auto;
+      padding: 2px;
+    }
+    .picker-cell {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #0d1117;
+      cursor: pointer;
+      transition: all var(--transition);
+      line-height: 1;
+      padding: 0;
+      color: var(--text);
+    }
+    .picker-cell:hover {
+      border-color: var(--accent);
+      background: rgba(63, 185, 80, 0.1);
+      transform: scale(1.08);
+    }
+
+    /* Preset modal tabs + cards */
+    .modal-tabs {
+      display: flex;
+      gap: 4px;
+      margin: 0 0 12px 0;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .modal-tab {
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: var(--text);
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .modal-tab:hover { background: var(--border); }
+    .modal-tab.active {
+      background: rgba(35, 134, 54, 0.85);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .preset-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .preset-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+      max-height: 50vh;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .preset-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0d1117;
+      cursor: pointer;
+      transition: all var(--transition);
+      text-align: left;
+      color: var(--text);
+      font: inherit;
+      width: 100%;
+      position: relative;
+    }
+    .preset-card:hover {
+      border-color: var(--card-accent, var(--accent));
+      background: rgba(63, 185, 80, 0.05);
+      transform: translateY(-2px);
+      box-shadow: var(--glow);
+    }
+    .preset-card .pc-icon { font-size: 22px; line-height: 1; }
+    .preset-card .pc-name {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .preset-card .pc-swatch {
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--card-accent, var(--accent));
+      margin-top: 2px;
+    }
+    .preset-card .pc-delete {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: #8b949e;
+      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      font-size: 12px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .preset-card.user-preset .pc-delete { display: flex; }
+    .preset-card .pc-delete:hover {
+      background: #f85149;
+      color: #fff;
+      border-color: #f85149;
+    }
+    .preset-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: #6e7681;
+      font-size: 12px;
+      padding: 24px 12px;
+    }
+
+    /* ─── MODAL / POPUP ─── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 560px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.5), var(--glow);
+      animation: slideUp 0.25s ease;
+    }
+
+    .modal h3 {
+      font-size: 18px;
+      color: var(--accent);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal p, .modal li {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #8b949e;
+    }
+    .modal a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+    .modal a:hover {
+      text-decoration: underline;
+      color: #79c0ff;
+    }
+
+    .modal ul {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0;
+    }
+    .modal ul li {
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(48,54,61,0.4);
+    }
+    .modal ul li:last-child { border-bottom: none; }
+
+    .modal-close {
+      float: right;
+      background: none;
+      border: 1px solid var(--border);
+      color: #8b949e;
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 6px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition);
+    }
+    .modal-close:hover {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    .modal-section {
+      margin-top: 16px;
+    }
+    .modal-section h4 {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .modal code {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: #d2a8ff;
+    }
+
+    /* ─── EXPORT MODAL ─── */
+    .export-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 16px 0;
+    }
+    .export-options .export-opt:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+    .export-opt {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0d1117;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--transition);
+    }
+    .export-opt:hover {
+      border-color: var(--accent);
+      background: rgba(63,185,80,0.05);
+      transform: translateY(-2px);
+      box-shadow: var(--glow);
+    }
+    .export-opt .export-icon {
+      font-size: 24px;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .export-opt .export-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .export-opt .export-desc {
+      font-size: 10px;
+      color: #6e7681;
+      margin-top: 2px;
+    }
+
+    /* ─── DROPDOWN (Other) ─── */
+    .dropdown-container {
+      position: relative;
+    }
+    .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-width: 280px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      z-index: 200;
+      display: none;
+      animation: slideUp 0.15s ease;
+      overflow: hidden;
+    }
+    .dropdown-menu.active {
+      display: block;
+    }
+    .dropdown-menu a {
+      display: flex;
+      flex-direction: column;
+      padding: 10px 14px;
+      text-decoration: none;
+      color: var(--text);
+      border-bottom: 1px solid rgba(48,54,61,0.4);
+      transition: background var(--transition);
+    }
+    .dropdown-menu a:last-child { border-bottom: none; }
+    .dropdown-menu a:hover {
+      background: rgba(63,185,80,0.06);
+    }
+    .dropdown-menu a .dd-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #58a6ff;
+    }
+    .dropdown-menu a .dd-desc {
+      font-size: 10px;
+      color: #6e7681;
+      margin-top: 2px;
+    }
+
+    /* ─── TOAST ─── */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--panel);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 12px;
+      color: var(--text);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4), var(--glow);
+      z-index: 2000;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* ─── SCROLLBARS ─── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+    /* ─── FOOTER ─── */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 4px 12px;
+      font-size: 10px;
+      color: #484f58;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 900px) {
+      .app-layout {
+        grid-template-rows: auto auto auto;
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+      }
+      .panel-preview { grid-row: 1; grid-column: 1; min-height: 200px; }
+      .panel-code { grid-row: 2; grid-column: 1; min-height: 150px; }
+      .panel-settings { grid-row: 3; grid-column: 1; }
+      .settings-scroll { flex-wrap: wrap; }
+      .settings-group { min-width: 140px; flex: 1; }
+      html, body { overflow: auto; }
+    }
+
+    /* Hidden file input */
+    #import-file-input { display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════ NAVBAR ═══════════════ -->
+  <nav class="navbar">
+    <div class="nav-left">
+      <span class="nav-brand">⬡ SVG Alert Studio</span>
+      <a href="https://github.com/Szmelc-INC/SVG-Alert-Studio" target="_blank" rel="noopener" class="nav-link">
+        <button class="nav-btn" type="button">🐙 GitHub</button>
+      </a>
+      <a href="https://szmelc.com/svg" target="_blank" rel="noopener" class="nav-link">
+        <button class="nav-btn" type="button">🌐 Szmelc</button>
+      </a>
+      <button class="nav-btn" type="button" id="btn-about">📖 About</button>
+      <button class="nav-btn danger" type="button" id="btn-actionability">⚡ Actionability</button>
+      <div class="dropdown-container">
+        <button class="nav-btn" type="button" id="btn-other">☆ Other ▾</button>
+        <div class="dropdown-menu" id="other-dropdown">
+          <a href="https://typingsvg.vercel.app/" target="_blank" rel="noopener">
+            <span class="dd-title">Typing SVG</span>
+            <span class="dd-desc">Animated typing SVG for README profiles</span>
+          </a>
+          <a href="https://readme-typing-svg.herokuapp.com/demo/" target="_blank" rel="noopener">
+            <span class="dd-title">README Typing SVG Demo</span>
+            <span class="dd-desc">Alternative typing SVG generator with live demo</span>
+          </a>
+          <a href="https://fontawesome.com/" target="_blank" rel="noopener">
+            <span class="dd-title">Font Awesome</span>
+            <span class="dd-desc">Icon library & toolkit with 26,000+ icons</span>
+          </a>
+          <a href="https://iconmonstr.com/" target="_blank" rel="noopener">
+            <span class="dd-title">iconmonstr</span>
+            <span class="dd-desc">Free, simple, consistent icons</span>
+          </a>
+          <a href="https://icon-sets.iconify.design/" target="_blank" rel="noopener">
+            <span class="dd-title">Iconify Icon Sets</span>
+            <span class="dd-desc">200,000+ open source icons, one unified framework</span>
+          </a>
+          <a href="http://xahlee.info/comp/unicode_index.html" target="_blank" rel="noopener">
+            <span class="dd-title">Unicode Index (Xah Lee)</span>
+            <span class="dd-desc">Comprehensive Unicode character reference</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <button class="nav-btn" type="button" id="btn-import">📂 Import</button>
+      <button class="nav-btn primary" type="button" id="btn-export">📦 Export</button>
+    </div>
+  </nav>
+
+  <!-- ═══════════════ MAIN LAYOUT ═══════════════ -->
+  <div class="app-layout">
+    <!-- Preview Panel (top-left) -->
+    <div class="panel panel-preview">
+      <div class="panel-header">
+        <h2>🖼 Preview</h2>
+        <div style="display:flex;gap:4px;">
+          <button class="action-btn" type="button" id="btn-presets">🎨 Presets</button>
+          <button class="action-btn primary" type="button" id="btn-update">🔁 Update</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="preview-box">
+          <div id="preview"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SVG Markup Panel (top-right) -->
+    <div class="panel panel-code">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <h2>
+            &lt;/&gt; Markup
+            <span class="pill" id="markup-mode-pill">SVG</span>
+          </h2>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <label class="toggle-switch" title="Edit markup directly; Update applies it to preview">
+            <input type="checkbox" id="manual-edit" />
+            <span class="toggle-track"></span>
+            <span class="toggle-label">Manual Edit</span>
+          </label>
+          <div class="format-toggle" role="group" aria-label="Markup format">
+            <button class="action-btn active" type="button" id="btn-fmt-svg" data-format="svg">SVG</button>
+            <button class="action-btn" type="button" id="btn-fmt-html" data-format="html">HTML</button>
+            <button class="action-btn" type="button" id="btn-fmt-png" data-format="png">PNG</button>
+          </div>
+          <button class="action-btn" type="button" id="btn-copy-markup">📋 Copy</button>
+          <button class="action-btn" type="button" id="btn-download-markup">⬇ Download</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="code-editor" id="code-editor">
+          <pre class="code-highlight" id="svg-highlight" aria-hidden="true"></pre>
+          <textarea id="svg-output" readonly spellcheck="false"></textarea>
+        </div>
+        <div class="markup-png-view" id="markup-png-view">
+          <img id="markup-png-img" alt="PNG preview" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Panel (bottom, full width) -->
+    <div class="panel panel-settings">
+      <div class="settings-scroll">
+
+        <!-- Group: Content -->
+        <div class="settings-group" style="min-width:220px;flex:1.5;">
+          <div class="settings-group-title">Content</div>
+          <div class="s-row">
+            <div class="s-field" style="flex:2">
+              <label for="title">Title</label>
+              <input id="title" type="text" value="Success" />
+            </div>
+            <div class="s-field" style="flex:0.85">
+              <label for="icon">Icon</label>
+              <div class="icon-input-row">
+                <input id="icon" type="text" value="✔" />
+                <button class="icon-picker-btn" type="button" id="btn-icon-picker" title="Pick icon / emoji">☺</button>
+              </div>
+            </div>
+          </div>
+          <div class="s-field" style="flex:1;min-height:60px;">
+            <label for="body">Markdown body</label>
+            <textarea id="body" style="flex:1;"># Title
+
+> Description with **emphasis** and `inline code`.
+
+```bash
+ls -la
+echo "hello"
+```
+
+- Bullet 1
+- Bullet 2</textarea>
+          </div>
+        </div>
+
+        <!-- Group: Colors -->
+        <div class="settings-group colors-group">
+          <div class="settings-group-title">Colors</div>
+          <div class="chip-section-label">Card</div>
+          <div class="chip-grid">
+            <label class="color-chip" data-tip="Background" for="bgColor"><span class="chip-abbr">BKG</span><input id="bgColor" type="color" value="#0d1117" /></label>
+            <label class="color-chip" data-tip="Border" for="borderColor"><span class="chip-abbr">BRD</span><input id="borderColor" type="color" value="#3fb950" /></label>
+            <label class="color-chip" data-tip="Title" for="titleColor"><span class="chip-abbr">TTL</span><input id="titleColor" type="color" value="#3fb950" /></label>
+            <label class="color-chip" data-tip="Icon" for="iconColor"><span class="chip-abbr">ICN</span><input id="iconColor" type="color" value="#3fb950" /></label>
+            <label class="color-chip" data-tip="Body text" for="textColor"><span class="chip-abbr">TXT</span><input id="textColor" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Shadow" for="shadowColor"><span class="chip-abbr">SHD</span><input id="shadowColor" type="color" value="#000000" /></label>
+          </div>
+          <div class="chip-section-label">Markdown</div>
+          <div class="chip-grid">
+            <label class="color-chip" data-tip="Heading H1" for="h1Color"><span class="chip-abbr">H1</span><input id="h1Color" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Heading H2" for="h2Color"><span class="chip-abbr">H2</span><input id="h2Color" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Heading H3" for="h3Color"><span class="chip-abbr">H3</span><input id="h3Color" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Blockquote" for="quoteColor"><span class="chip-abbr">QT</span><input id="quoteColor" type="color" value="#8b949e" /></label>
+            <label class="color-chip" data-tip="List bullets" for="bulletColor"><span class="chip-abbr">BLT</span><input id="bulletColor" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Paragraph" for="paraColor"><span class="chip-abbr">P</span><input id="paraColor" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Bold text" for="boldColor"><span class="chip-abbr">BLD</span><input id="boldColor" type="color" value="#c9d1d9" /></label>
+            <label class="color-chip" data-tip="Italic text" for="italicColor"><span class="chip-abbr">ITL</span><input id="italicColor" type="color" value="#c9d1d9" /></label>
+          </div>
+          <div class="chip-section-label">Code</div>
+          <div class="chip-grid">
+            <label class="color-chip" data-tip="Inline code text" for="inlineCodeText"><span class="chip-abbr">ICT</span><input id="inlineCodeText" type="color" value="#d2a8ff" /></label>
+            <label class="color-chip" data-tip="Inline code background" for="inlineCodeBg"><span class="chip-abbr">ICB</span><input id="inlineCodeBg" type="color" value="#161b22" /></label>
+            <label class="color-chip" data-tip="Inline code border" for="inlineCodeBorder"><span class="chip-abbr">ICR</span><input id="inlineCodeBorder" type="color" value="#30363d" /></label>
+            <label class="color-chip" data-tip="Code block background" for="codeBlockBg"><span class="chip-abbr">CBG</span><input id="codeBlockBg" type="color" value="#161b22" /></label>
+            <label class="color-chip" data-tip="Code block border" for="codeBlockBorder"><span class="chip-abbr">CBR</span><input id="codeBlockBorder" type="color" value="#30363d" /></label>
+            <label class="color-chip" data-tip="Code block text" for="codeTextColor"><span class="chip-abbr">CTX</span><input id="codeTextColor" type="color" value="#c9d1d9" /></label>
+          </div>
+        </div>
+
+        <!-- Group: Typography -->
+        <div class="settings-group typography-group">
+          <div class="settings-group-title">Typography</div>
+          <div class="s-field">
+            <label for="fontFamily">Font</label>
+            <select id="fontFamily">
+              <option value="system-ui" selected>System UI</option>
+              <option value="impact">Impact</option>
+              <option value="arial">Arial</option>
+              <option value="jbmnf">JetBrains Mono Nerd</option>
+              <option value="monospace">Monospace</option>
+              <option value="serif">Serif</option>
+              <option value="local">Local upload</option>
+              <option value="custom">Custom (CSS)</option>
+            </select>
+          </div>
+          <div class="s-field">
+            <label for="fontCustom">Custom font-family</label>
+            <input id="fontCustom" type="text" placeholder='"Impact", sans-serif' />
+          </div>
+          <div class="s-field">
+            <label>Local font</label>
+            <div class="font-upload-row">
+              <button class="action-btn" type="button" id="btn-font-upload">📂 Upload</button>
+              <span class="local-font-name" id="local-font-name">None</span>
+            </div>
+            <input type="file" id="local-font-input" accept=".ttf,.otf,.woff,.woff2,.ttc" />
+          </div>
+          <div class="s-row">
+            <div class="s-field">
+              <label for="titleWeight">Title weight</label>
+              <select id="titleWeight">
+                <option value="400">Regular</option>
+                <option value="500">Medium</option>
+                <option value="600">Semibold</option>
+                <option value="700" selected>Bold</option>
+                <option value="800">Extra Bold</option>
+              </select>
+            </div>
+            <div class="s-field">
+              <label for="bodyWeight">Body weight</label>
+              <select id="bodyWeight">
+                <option value="300">Light</option>
+                <option value="400" selected>Regular</option>
+                <option value="500">Medium</option>
+                <option value="600">Semibold</option>
+                <option value="700">Bold</option>
+              </select>
+            </div>
+          </div>
+          <div class="s-row">
+            <div class="s-field">
+              <label for="letterSpacing">Letter spacing</label>
+              <input id="letterSpacing" type="number" value="0" min="-2" max="8" step="0.1" />
+            </div>
+            <div class="s-field">
+              <label for="titleLetterSpacing">Title spacing</label>
+              <input id="titleLetterSpacing" type="number" value="0" min="-2" max="8" step="0.1" />
+            </div>
+          </div>
+          <div class="s-row">
+            <div class="s-field">
+              <label for="bodyFontStyle">Body style</label>
+              <select id="bodyFontStyle">
+                <option value="normal" selected>Normal</option>
+                <option value="italic">Italic</option>
+              </select>
+            </div>
+            <div class="s-field">
+              <label for="titleTransform">Title case</label>
+              <select id="titleTransform">
+                <option value="none" selected>None</option>
+                <option value="uppercase">UPPER</option>
+                <option value="lowercase">lower</option>
+                <option value="capitalize">Capitalize</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group: Options -->
+        <div class="settings-group options-group">
+          <div class="settings-group-title">Options</div>
+          <label class="checkbox-label">
+            <input id="transparentBg" type="checkbox" />
+            Transparent bg
+          </label>
+          <label class="checkbox-label">
+            <input id="invertColors" type="checkbox" />
+            Invert colors
+          </label>
+          <label class="checkbox-label">
+            <input id="showIcon" type="checkbox" checked />
+            Show icon
+          </label>
+          <label class="checkbox-label">
+            <input id="showTitle" type="checkbox" checked />
+            Show title
+          </label>
+          <label class="checkbox-label">
+            <input id="showBody" type="checkbox" checked />
+            Show body
+          </label>
+          <label class="checkbox-label">
+            <input id="showCodeBg" type="checkbox" checked />
+            Code block bg
+          </label>
+          <label class="checkbox-label">
+            <input id="showInlineCodeBg" type="checkbox" checked />
+            Inline code bg
+          </label>
+          <label class="checkbox-label" title="Shrink code block width to fit content instead of full card width">
+            <input id="trimCodeWidth" type="checkbox" checked />
+            Trim code width
+          </label>
+          <label class="checkbox-label">
+            <input id="dropShadow" type="checkbox" />
+            Drop shadow
+          </label>
+          <label class="checkbox-label">
+            <input id="clipOverflow" type="checkbox" />
+            Clip overflow
+          </label>
+          <div class="chip-section-label">Shadow</div>
+          <div class="num-grid cols-3">
+            <label class="num-chip" data-tip="Shadow blur" for="shadowBlur"><span class="chip-abbr">BLR</span><input id="shadowBlur" type="number" value="12" min="0" max="48" /></label>
+          </div>
+          <div class="chip-section-label">Border sides</div>
+          <div class="border-sides">
+            <label class="checkbox-label">
+              <input id="borderLeft" type="checkbox" checked />
+              Left
+            </label>
+            <label class="checkbox-label">
+              <input id="borderRight" type="checkbox" />
+              Right
+            </label>
+            <label class="checkbox-label">
+              <input id="borderTop" type="checkbox" />
+              Top
+            </label>
+            <label class="checkbox-label">
+              <input id="borderBottom" type="checkbox" />
+              Bottom
+            </label>
+          </div>
+        </div>
+
+        <!-- Group: Dimensions (rightmost) -->
+        <div class="settings-group dimensions-group">
+          <div class="settings-group-title">Dimensions</div>
+          <div class="chip-section-label">Card</div>
+          <div class="num-grid">
+            <label class="num-chip" data-tip="Width (px)" for="width"><span class="chip-abbr">W</span><input id="width" type="number" value="520" min="200" max="1600" /></label>
+            <label class="num-chip" data-tip="Height mode" for="heightMode"><span class="chip-abbr">HMD</span>
+              <select id="heightMode">
+                <option value="auto" selected>Auto</option>
+                <option value="fixed">Fix</option>
+              </select>
+            </label>
+            <label class="num-chip" data-tip="Fixed height (px)" for="heightFixed" id="height-fixed-field"><span class="chip-abbr">HFX</span><input id="heightFixed" type="number" value="120" min="40" max="2000" /></label>
+            <label class="num-chip" data-tip="Padding X" for="paddingX"><span class="chip-abbr">PDX</span><input id="paddingX" type="number" value="14" min="0" max="80" /></label>
+            <label class="num-chip" data-tip="Padding Y" for="paddingY"><span class="chip-abbr">PDY</span><input id="paddingY" type="number" value="14" min="0" max="80" /></label>
+            <label class="num-chip" data-tip="Border width" for="borderWidth"><span class="chip-abbr">BDW</span><input id="borderWidth" type="number" value="5" min="0" max="24" /></label>
+            <label class="num-chip" data-tip="Corner radius" for="cornerRadius"><span class="chip-abbr">RAD</span><input id="cornerRadius" type="number" value="8" min="0" max="48" /></label>
+            <label class="num-chip" data-tip="Icon size" for="iconSize"><span class="chip-abbr">ISZ</span><input id="iconSize" type="number" value="20" min="8" max="64" /></label>
+            <label class="num-chip" data-tip="Icon gap" for="iconGap"><span class="chip-abbr">IGP</span><input id="iconGap" type="number" value="32" min="0" max="120" /></label>
+            <label class="num-chip" data-tip="Title font size" for="titleFontSize"><span class="chip-abbr">TSZ</span><input id="titleFontSize" type="number" value="16" min="8" max="48" /></label>
+            <label class="num-chip" data-tip="Body font size" for="bodyFontSize"><span class="chip-abbr">BSZ</span><input id="bodyFontSize" type="number" value="13" min="8" max="32" /></label>
+            <label class="num-chip" data-tip="Line height" for="lineHeight"><span class="chip-abbr">LH</span><input id="lineHeight" type="number" value="18" min="10" max="48" /></label>
+            <label class="num-chip" data-tip="Title Y offset" for="titleOffsetY"><span class="chip-abbr">TY</span><input id="titleOffsetY" type="number" value="18" min="0" max="80" /></label>
+            <label class="num-chip" data-tip="Body Y offset" for="bodyOffsetY"><span class="chip-abbr">BY</span><input id="bodyOffsetY" type="number" value="36" min="0" max="120" /></label>
+          </div>
+          <div class="chip-section-label">Markdown sizes</div>
+          <div class="num-grid">
+            <label class="num-chip" data-tip="H1 font size" for="h1Size"><span class="chip-abbr">H1</span><input id="h1Size" type="number" value="18" min="8" max="48" /></label>
+            <label class="num-chip" data-tip="H2 font size" for="h2Size"><span class="chip-abbr">H2</span><input id="h2Size" type="number" value="16" min="8" max="40" /></label>
+            <label class="num-chip" data-tip="H3 font size" for="h3Size"><span class="chip-abbr">H3</span><input id="h3Size" type="number" value="15" min="8" max="36" /></label>
+            <label class="num-chip" data-tip="H1 line height" for="h1LH"><span class="chip-abbr">H1L</span><input id="h1LH" type="number" value="24" min="10" max="64" /></label>
+            <label class="num-chip" data-tip="H2 line height" for="h2LH"><span class="chip-abbr">H2L</span><input id="h2LH" type="number" value="22" min="10" max="56" /></label>
+            <label class="num-chip" data-tip="H3 line height" for="h3LH"><span class="chip-abbr">H3L</span><input id="h3LH" type="number" value="20" min="10" max="48" /></label>
+            <label class="num-chip" data-tip="Quote font size" for="quoteSize"><span class="chip-abbr">QSZ</span><input id="quoteSize" type="number" value="13" min="8" max="32" /></label>
+            <label class="num-chip" data-tip="Quote indent" for="quoteIndent"><span class="chip-abbr">QIN</span><input id="quoteIndent" type="number" value="10" min="0" max="80" /></label>
+            <label class="num-chip" data-tip="List indent" for="listIndent"><span class="chip-abbr">LIN</span><input id="listIndent" type="number" value="12" min="0" max="80" /></label>
+            <label class="num-chip" data-tip="Paragraph size" for="paraSize"><span class="chip-abbr">PSZ</span><input id="paraSize" type="number" value="13" min="8" max="32" /></label>
+          </div>
+          <div class="chip-section-label">Code blocks</div>
+          <div class="num-grid">
+            <label class="num-chip" data-tip="Code font size" for="codeSize"><span class="chip-abbr">CSZ</span><input id="codeSize" type="number" value="12" min="8" max="28" /></label>
+            <label class="num-chip" data-tip="Code block padding" for="codePad"><span class="chip-abbr">CPD</span><input id="codePad" type="number" value="6" min="0" max="32" /></label>
+            <label class="num-chip" data-tip="Code block radius" for="codeRadius"><span class="chip-abbr">CRD</span><input id="codeRadius" type="number" value="6" min="0" max="24" /></label>
+            <label class="num-chip" data-tip="Code X offset" for="codeOffsetX"><span class="chip-abbr">CX</span><input id="codeOffsetX" type="number" value="0" min="-80" max="120" /></label>
+            <label class="num-chip" data-tip="Code Y offset" for="codeOffsetY"><span class="chip-abbr">CY</span><input id="codeOffsetY" type="number" value="0" min="-40" max="80" /></label>
+            <label class="num-chip" data-tip="Code text X inset" for="codeTextInset"><span class="chip-abbr">CTX</span><input id="codeTextInset" type="number" value="0" min="0" max="40" /></label>
+            <label class="num-chip" data-tip="Code bottom gap" for="codeGapY"><span class="chip-abbr">CGY</span><input id="codeGapY" type="number" value="2" min="0" max="40" /></label>
+            <label class="num-chip" data-tip="Code min width" for="codeMinW"><span class="chip-abbr">CMN</span><input id="codeMinW" type="number" value="40" min="0" max="800" /></label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Everything runs locally in your browser · Fonts depend on what's installed where the SVG is rendered
+  </div>
+
+  <!-- ═══════════════ MODALS ═══════════════ -->
+
+  <!-- About Modal -->
+  <div class="modal-overlay" id="modal-about">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('modal-about')">✕</button>
+      <h3>📖 About SVG Alert Studio</h3>
+      <p>
+        A browser-based tool for creating beautiful, GitHub-style SVG alert cards
+        to embed in your README.md files. Everything runs entirely in your browser —
+        no server, no tracking, no telemetry.
+      </p>
+
+      <div class="modal-section">
+        <h4>Features</h4>
+        <ul>
+          <li>🎨 Full color customization (background, border, text, inline code)</li>
+          <li>📝 GitHub-flavored Markdown support (headings, blockquotes, code blocks, lists, inline formatting)</li>
+          <li>🖥️ Live SVG preview with instant updates</li>
+          <li>💾 Export as SVG, HTML, PNG, or bundled ZIP — copy SVG or HTML from the markup pane</li>
+          <li>📂 Import previously exported files to continue editing</li>
+          <li>🎛️ Presets for common alert types (Success, Warning, Error, Info)</li>
+          <li>☺ Built-in symbol / emoji / icon picker</li>
+          <li>📐 Extensive dimension controls (padding, fonts, offsets, fixed height)</li>
+          <li>🔲 Per-side border toggles (left / right / top / bottom)</li>
+          <li>🔤 Multiple font options including custom CSS font stacks</li>
+          <li>🔄 Color inversion and transparent background modes</li>
+        </ul>
+      </div>
+
+      <div class="modal-section">
+        <h4>How to use</h4>
+        <p>
+          1. Configure your alert in the <strong>Settings</strong> panel at the bottom.<br/>
+          2. Preview updates in real-time in the top-left panel.<br/>
+          3. Copy the SVG markup from the top-right panel, or use <strong>Export</strong> to download.<br/>
+          4. Embed in your README: <code>![Alert](https://your-host.com/alert.svg)</code>
+        </p>
+      </div>
+
+      <div class="modal-section">
+        <h4>Markdown support</h4>
+        <p>
+          Supported blocks: <code># ## ###</code> headings, <code>&gt;</code> blockquotes,
+          <code>```lang</code> fenced code blocks (with syntax highlighting for bash, JS, Python),
+          <code>- * +</code> unordered lists, inline <code>**bold**</code>, <code>*italic*</code>,
+          <code>`code`</code>.
+        </p>
+      </div>
+
+      <div class="modal-section">
+        <h4>Credits</h4>
+        <p>
+          Built by <a href="https://github.com/Szmelc-INC" target="_blank">Szmelc-INC</a>
+          · <a href="https://szmelc.com" target="_blank">szmelc.com</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div class="modal-overlay" id="modal-export">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('modal-export')">✕</button>
+      <h3>📦 Export</h3>
+      <p>Choose an export format for your alert card.</p>
+      <div class="export-options">
+        <div class="export-opt" onclick="doExport('svg')">
+          <span class="export-icon">🖼</span>
+          <span class="export-label">SVG</span>
+          <span class="export-desc">Vector image, best for web</span>
+        </div>
+        <div class="export-opt" onclick="doExport('html')">
+          <span class="export-icon">📄</span>
+          <span class="export-label">HTML</span>
+          <span class="export-desc">Standalone HTML page</span>
+        </div>
+        <div class="export-opt" onclick="doExport('png')">
+          <span class="export-icon">🎨</span>
+          <span class="export-label">PNG</span>
+          <span class="export-desc">Raster image, universal</span>
+        </div>
+        <div class="export-opt" onclick="doExport('presets')">
+          <span class="export-icon">🎨</span>
+          <span class="export-label">Presets</span>
+          <span class="export-desc">Your saved user presets (JSON)</span>
+        </div>
+        <div class="export-opt" onclick="doExport('zip')">
+          <span class="export-icon">📦</span>
+          <span class="export-label">ALL (.zip)</span>
+          <span class="export-desc">SVG + HTML + PNG + project + user presets</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Presets Modal -->
+  <div class="modal-overlay" id="modal-presets">
+    <div class="modal modal-wide">
+      <button class="modal-close" onclick="closeModal('modal-presets')">✕</button>
+      <h3>🎨 Presets</h3>
+      <div class="modal-tabs" id="preset-tabs">
+        <button type="button" class="modal-tab active" data-preset-tab="default">Default</button>
+        <button type="button" class="modal-tab" data-preset-tab="user">User</button>
+      </div>
+      <div class="preset-toolbar" id="preset-toolbar-user" style="display:none;">
+        <button type="button" class="action-btn primary" id="btn-add-preset">＋ Add as preset</button>
+        <span style="font-size:11px;color:#6e7681;">Saves current settings to User presets</span>
+      </div>
+      <div class="preset-cards" id="preset-cards"></div>
+    </div>
+  </div>
+
+  <!-- Icon Picker Modal -->
+  <div class="modal-overlay" id="modal-icon-picker">
+    <div class="modal modal-wide">
+      <button class="modal-close" onclick="closeModal('modal-icon-picker')">✕</button>
+      <h3>☺ Icon / Emoji Picker</h3>
+      <p>Click a symbol to set the icon field.</p>
+      <div class="picker-tabs" id="picker-tabs">
+        <button type="button" class="picker-tab active" data-tab="symbols">Symbols</button>
+        <button type="button" class="picker-tab" data-tab="emoji">Emoji</button>
+        <button type="button" class="picker-tab" data-tab="icons">Icons</button>
+      </div>
+      <div class="picker-search">
+        <input type="text" id="picker-search" placeholder="Filter…" />
+      </div>
+      <div class="picker-grid" id="picker-grid"></div>
+    </div>
+  </div>
+
+  <!-- Actionability Modal -->
+  <div class="modal-overlay" id="modal-actionability">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('modal-actionability')">✕</button>
+      <h3>⚡ Actionability</h3>
+      <div class="actionability-warn">
+        <strong>Warning:</strong> Click actions only work when the SVG is embedded
+        <em>inline</em> or opened as an HTML page. They generally <strong>do not run</strong>
+        when the file is used as <code>&lt;img src="…"&gt;</code> (e.g. many README hosts).
+        Only enable for content you control. Prefer redirects over JS. Never paste untrusted
+        scripts. JS can be blocked by CSP and sanitizers.
+      </div>
+      <p style="font-size:12px;color:#8b949e;margin-bottom:8px;">
+        Optional click behaviors baked into exported SVG/HTML.
+      </p>
+      <div class="act-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="actRedirect" />
+          Redirect on click
+        </label>
+      </div>
+      <div class="act-field">
+        <label for="actUrl">URL (https only)</label>
+        <input id="actUrl" type="url" placeholder="https://example.com/docs" />
+      </div>
+      <div class="act-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="actExecute" />
+          Execute JS on click
+        </label>
+      </div>
+      <div class="act-field">
+        <label for="actJs">JS body (runs inside click handler)</label>
+        <textarea id="actJs" placeholder="console.log('alert clicked');"></textarea>
+      </div>
+      <p style="font-size:11px;color:#6e7681;margin-top:12px;">
+        Settings apply on next Update / export. Keep scripts tiny and side-effect free when possible.
+      </p>
+    </div>
+  </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-input" accept=".svg,.html,.htm,.zip,.json" />
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ═══════════════ SCRIPT ═══════════════ -->
+  <script>
+    /* ─── Utility ─── */
+    const $ = (id) => document.getElementById(id);
+
+    function showToast(msg, duration = 2500) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.remove('show'), duration);
+    }
+
+    function openModal(id) {
+      $(id).classList.add('active');
+    }
+    function closeModal(id) {
+      $(id).classList.remove('active');
+    }
+
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(ov => {
+      ov.addEventListener('click', e => {
+        if (e.target === ov) ov.classList.remove('active');
+      });
+    });
+
+    /* ─── Other dropdown ─── */
+    const btnOther = $('btn-other');
+    const ddOther = $('other-dropdown');
+    btnOther.addEventListener('click', e => {
+      e.stopPropagation();
+      ddOther.classList.toggle('active');
+    });
+    document.addEventListener('click', () => ddOther.classList.remove('active'));
+
+    /* ─── About ─── */
+    $('btn-about').addEventListener('click', () => openModal('modal-about'));
+
+    /* ─── Inputs ─── */
+    const inputs = {
+      title: $("title"),
+      icon: $("icon"),
+      body: $("body"),
+      width: $("width"),
+      heightMode: $("heightMode"),
+      heightFixed: $("heightFixed"),
+      paddingX: $("paddingX"),
+      paddingY: $("paddingY"),
+      bgColor: $("bgColor"),
+      borderColor: $("borderColor"),
+      titleColor: $("titleColor"),
+      iconColor: $("iconColor"),
+      textColor: $("textColor"),
+      h1Color: $("h1Color"),
+      h2Color: $("h2Color"),
+      h3Color: $("h3Color"),
+      bulletColor: $("bulletColor"),
+      quoteColor: $("quoteColor"),
+      paraColor: $("paraColor"),
+      boldColor: $("boldColor"),
+      italicColor: $("italicColor"),
+      inlineCodeText: $("inlineCodeText"),
+      inlineCodeBg: $("inlineCodeBg"),
+      inlineCodeBorder: $("inlineCodeBorder"),
+      codeBlockBg: $("codeBlockBg"),
+      codeBlockBorder: $("codeBlockBorder"),
+      codeTextColor: $("codeTextColor"),
+      shadowColor: $("shadowColor"),
+      borderWidth: $("borderWidth"),
+      fontFamily: $("fontFamily"),
+      fontCustom: $("fontCustom"),
+      titleWeight: $("titleWeight"),
+      bodyWeight: $("bodyWeight"),
+      letterSpacing: $("letterSpacing"),
+      titleLetterSpacing: $("titleLetterSpacing"),
+      bodyFontStyle: $("bodyFontStyle"),
+      titleTransform: $("titleTransform"),
+      cornerRadius: $("cornerRadius"),
+      iconSize: $("iconSize"),
+      iconGap: $("iconGap"),
+      titleFontSize: $("titleFontSize"),
+      bodyFontSize: $("bodyFontSize"),
+      lineHeight: $("lineHeight"),
+      titleOffsetY: $("titleOffsetY"),
+      bodyOffsetY: $("bodyOffsetY"),
+      h1Size: $("h1Size"),
+      h2Size: $("h2Size"),
+      h3Size: $("h3Size"),
+      h1LH: $("h1LH"),
+      h2LH: $("h2LH"),
+      h3LH: $("h3LH"),
+      quoteSize: $("quoteSize"),
+      quoteIndent: $("quoteIndent"),
+      listIndent: $("listIndent"),
+      paraSize: $("paraSize"),
+      codeSize: $("codeSize"),
+      codePad: $("codePad"),
+      codeRadius: $("codeRadius"),
+      codeOffsetX: $("codeOffsetX"),
+      codeOffsetY: $("codeOffsetY"),
+      codeTextInset: $("codeTextInset"),
+      codeGapY: $("codeGapY"),
+      codeMinW: $("codeMinW"),
+      transparentBg: $("transparentBg"),
+      invertColors: $("invertColors"),
+      showIcon: $("showIcon"),
+      showTitle: $("showTitle"),
+      showBody: $("showBody"),
+      showCodeBg: $("showCodeBg"),
+      showInlineCodeBg: $("showInlineCodeBg"),
+      trimCodeWidth: $("trimCodeWidth"),
+      dropShadow: $("dropShadow"),
+      clipOverflow: $("clipOverflow"),
+      shadowBlur: $("shadowBlur"),
+      borderLeft: $("borderLeft"),
+      borderRight: $("borderRight"),
+      borderTop: $("borderTop"),
+      borderBottom: $("borderBottom"),
+      actRedirect: $("actRedirect"),
+      actUrl: $("actUrl"),
+      actExecute: $("actExecute"),
+      actJs: $("actJs"),
+      svgOutput: $("svg-output"),
+      svgHighlight: $("svg-highlight"),
+      preview: $("preview"),
+      btnUpdate: $("btn-update"),
+      btnCopy: $("btn-copy-markup"),
+      btnDownload: $("btn-download-markup"),
+      btnPresets: $("btn-presets"),
+      btnIconPicker: $("btn-icon-picker"),
+      btnFmtSvg: $("btn-fmt-svg"),
+      btnFmtHtml: $("btn-fmt-html"),
+      btnFmtPng: $("btn-fmt-png"),
+      markupModePill: $("markup-mode-pill"),
+      manualEdit: $("manual-edit"),
+      codeEditor: $("code-editor"),
+      markupPngView: $("markup-png-view"),
+      markupPngImg: $("markup-png-img"),
+      btnFontUpload: $("btn-font-upload"),
+      localFontInput: $("local-font-input"),
+      localFontName: $("local-font-name"),
+    };
+
+    // Markup pane format: "svg" | "html" | "png"
+    let markupFormat = "svg";
+    let lastSvg = "";
+    let lastPngUrl = null;
+    let manualEditMode = false;
+    let localFontFamily = null;
+    let localFontDisplayName = null;
+    const USER_PRESETS_KEY = "svg-alert-studio-user-presets";
+
+    // canvas for measuring text
+    const _measureCanvas = document.createElement("canvas");
+    const _measureCtx = _measureCanvas.getContext("2d");
+
+    function measureTextWidth(text, fontSize, fontFamily) {
+      _measureCtx.font = fontSize + "px " + fontFamily;
+      return _measureCtx.measureText(text).width;
+    }
+
+    function fontCSS(familyKey) {
+      if (familyKey === "custom") {
+        const custom = (inputs.fontCustom.value || "").trim();
+        if (custom) return custom;
+      }
+      if (familyKey === "local" && localFontFamily) {
+        return `'${localFontFamily}',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif`;
+      }
+
+      switch (familyKey) {
+        case "impact":
+          return "'Impact',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+        case "arial":
+          return "Arial,'Helvetica Neue',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+        case "jbmnf":
+          return "'JetBrainsMono Nerd Font','JetBrains Mono','JetBrainsMono NF',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace";
+        case "monospace":
+          return "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace";
+        case "serif":
+          return "Georgia,'Times New Roman',Times,serif";
+        case "local":
+          return "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+        case "system-ui":
+        default:
+          return "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+      }
+    }
+
+    function transformTitleText(text, mode) {
+      if (!text) return text;
+      if (mode === "uppercase") return text.toUpperCase();
+      if (mode === "lowercase") return text.toLowerCase();
+      if (mode === "capitalize") {
+        return text.replace(/\b\w/g, (c) => c.toUpperCase());
+      }
+      return text;
+    }
+
+    function numOr(el, fallback) {
+      if (!el) return fallback;
+      const n = Number(el.value);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    /* ─── Lightweight XML/HTML syntax highlighter ─── */
+    function highlightMarkup(code) {
+      if (!code) return "";
+      const esc = (s) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      // Tokenize roughly: comments, doctype, tags, text
+      const re = /(<!--[\s\S]*?-->)|(<!DOCTYPE[^>]*>)|(<\/?[A-Za-z][\w:-]*(?:\s+[^<>]*?)?>)|([^<]+)/g;
+      let out = "";
+      let m;
+      while ((m = re.exec(code)) !== null) {
+        if (m[1]) {
+          out += `<span class="tok-comment">${esc(m[1])}</span>`;
+        } else if (m[2]) {
+          out += `<span class="tok-doctype">${esc(m[2])}</span>`;
+        } else if (m[3]) {
+          out += highlightTag(m[3]);
+        } else if (m[4]) {
+          out += `<span class="tok-plain">${esc(m[4])}</span>`;
+        }
+      }
+      return out || esc(code);
+    }
+
+    function highlightTag(tag) {
+      const esc = (s) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      // tag name + attributes
+      return tag.replace(
+        /^(<\/?)([A-Za-z][\w:-]*)([\s\S]*?)(\/?>)$/,
+        (_, open, name, attrs, close) => {
+          let a = attrs.replace(
+            /([^\s=]+)(\s*=\s*)("([^"]*)"|'([^']*)'|[^\s"'=<>`]+)?/g,
+            (mm, attr, eq, val) => {
+              if (!val) return `<span class="tok-attr">${esc(attr)}</span>`;
+              return `<span class="tok-attr">${esc(attr)}</span><span class="tok-punct">${esc(eq)}</span><span class="tok-str">${esc(val)}</span>`;
+            }
+          );
+          return `<span class="tok-punct">${esc(open)}</span><span class="tok-name">${esc(name)}</span>${a}<span class="tok-punct">${esc(close)}</span>`;
+        }
+      );
+    }
+
+    function syncHighlightScroll() {
+      const ta = inputs.svgOutput;
+      const hl = inputs.svgHighlight;
+      if (!ta || !hl) return;
+      hl.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+    }
+
+    function updateHighlightFromTextarea() {
+      if (!inputs.svgHighlight || markupFormat === "png") return;
+      inputs.svgHighlight.innerHTML = highlightMarkup(inputs.svgOutput.value) + "\n";
+      syncHighlightScroll();
+    }
+
+    function escapeXML(s) {
+      return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    }
+
+    function invertHexColor(hex) {
+      if (!hex) return hex;
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+      if (!m) return hex;
+      const v = parseInt(m[1], 16);
+      const r = 255 - ((v >> 16) & 0xff);
+      const g = 255 - ((v >> 8) & 0xff);
+      const b = 255 - (v & 0xff);
+      return (
+        "#" +
+        [r, g, b]
+          .map((c) => c.toString(16).padStart(2, "0"))
+          .join("")
+      );
+    }
+
+    // Normalize simple HTML tags into markdown-ish forms
+    function normalizeHtml(line) {
+      return line
+        .replace(/<(strong|b)>(.*?)<\/\1>/gi, '**$2**')
+        .replace(/<(em|i)>(.*?)<\/\1>/gi, '*$2*')
+        .replace(/<code>(.*?)<\/code>/gi, '`$1`');
+    }
+
+    // Inline markdown: **bold**, *italic*, `code`
+    function parseInlineMarkdown(text) {
+      const s = normalizeHtml(text);
+      const tokens = [];
+      const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
+      let last = 0;
+      let m;
+      while ((m = re.exec(s)) !== null) {
+        if (m.index > last) {
+          tokens.push({ type: "text", text: s.slice(last, m.index) });
+        }
+        const token = m[0];
+        if (token.startsWith("**") && token.endsWith("**")) {
+          tokens.push({ type: "bold", text: token.slice(2, -2) });
+        } else if (token.startsWith("`") && token.endsWith("`")) {
+          tokens.push({ type: "code", text: token.slice(1, -1) });
+        } else if (token.startsWith("*") && token.endsWith("*")) {
+          tokens.push({ type: "italic", text: token.slice(1, -1) });
+        } else {
+          tokens.push({ type: "text", text: token });
+        }
+        last = re.lastIndex;
+      }
+      if (last < s.length) {
+        tokens.push({ type: "text", text: s.slice(last) });
+      }
+      return tokens.length ? tokens : [{ type: "text", text: "" }];
+    }
+
+    // Very small "syntax highlighter" for a few langs
+    function syntaxColorToken(token, lang) {
+      const t = token.replace(/[^A-Za-z0-9_]/g, "");
+      if (!t) return null;
+      const lower = t.toLowerCase();
+
+      const bashKeywords = new Set([
+        "if","then","else","fi","for","do","done","while","case","esac",
+        "function","echo","printf","cd","ls","pwd","exit"
+      ]);
+      const jsKeywords = new Set([
+        "function","const","let","var","return","if","else","for","while",
+        "async","await","class","new","this","import","from","export","default"
+      ]);
+      const pyKeywords = new Set([
+        "def","class","return","if","elif","else","for","while","import",
+        "from","as","in","try","except","finally","with","lambda","yield"
+      ]);
+
+      if (["bash","sh","zsh","shell"].includes(lang)) {
+        if (bashKeywords.has(lower)) return "#79c0ff";
+      } else if (["js","javascript","ts","typescript"].includes(lang)) {
+        if (jsKeywords.has(lower)) return "#ff7b72";
+      } else if (["py","python"].includes(lang)) {
+        if (pyKeywords.has(lower)) return "#d2a8ff";
+      }
+
+      return null;
+    }
+
+    // Simple block-level markdown parser
+    function parseMarkdown(md) {
+      const lines = md.split(/\r?\n/);
+      const blocks = [];
+      let inCode = false;
+      let codeLang = "";
+      let codeLines = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const raw = lines[i];
+
+        const fenceMatch = raw.match(/^\s*```(\w+)?\s*$/);
+        if (fenceMatch) {
+          if (!inCode) {
+            inCode = true;
+            codeLang = (fenceMatch[1] || "").toLowerCase();
+            codeLines = [];
+          } else {
+            blocks.push({ type: "code", lang: codeLang, lines: codeLines.slice() });
+            inCode = false;
+            codeLang = "";
+            codeLines = [];
+          }
+          continue;
+        }
+
+        if (inCode) {
+          codeLines.push(raw);
+          continue;
+        }
+
+        if (/^\s*$/.test(raw)) {
+          blocks.push({ type: "blank" });
+          continue;
+        }
+
+        const h = raw.match(/^(#{1,6})\s+(.*)$/);
+        if (h) {
+          blocks.push({
+            type: "heading",
+            level: h[1].length,
+            text: h[2],
+          });
+          continue;
+        }
+
+        const q = raw.match(/^\s*>\s?(.*)$/);
+        if (q) {
+          blocks.push({
+            type: "blockquote",
+            text: q[1],
+          });
+          continue;
+        }
+
+        const li = raw.match(/^\s*[-*+]\s+(.*)$/);
+        if (li) {
+          blocks.push({
+            type: "listItem",
+            text: li[1],
+          });
+          continue;
+        }
+
+        blocks.push({
+          type: "paragraph",
+          text: raw,
+        });
+      }
+
+      if (inCode && codeLines.length) {
+        blocks.push({ type: "code", lang: codeLang, lines: codeLines.slice() });
+      }
+
+      return blocks;
+    }
+
+    function measureVisibleLines(blocks) {
+      let lines = 0;
+      blocks.forEach((b) => {
+        switch (b.type) {
+          case "code":
+            lines += Math.max(1, b.lines.length);
+            break;
+          case "blank":
+          case "heading":
+          case "blockquote":
+          case "listItem":
+          case "paragraph":
+            lines += 1;
+            break;
+        }
+      });
+      return Math.max(lines, 1);
+    }
+
+    function renderInlineTokens(tokens, startX, y, fontSize, baseLineHeight, font, inlineStyles, defaultFill) {
+      const monoFamily =
+        "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace";
+      let currentX = startX;
+      let tspans = "";
+      let shapes = "";
+
+      const inlineTextColor = inlineStyles.text || "#d2a8ff";
+      const bgColor = inlineStyles.bg;
+      const borderColor = inlineStyles.border;
+      const showInlineBg = inlineStyles.showBg !== false;
+      const boldColor = inlineStyles.boldColor || null;
+      const italicColor = inlineStyles.italicColor || null;
+
+      tokens.forEach((seg) => {
+        if (!seg.text) return;
+        const text = seg.text;
+        let thisFontFamily = font;
+        let fill = defaultFill || null;
+        let fontWeight = "";
+        let fontStyle = "";
+
+        if (seg.type === "code") {
+          thisFontFamily = monoFamily;
+          fill = inlineTextColor;
+        }
+        if (seg.type === "bold") {
+          fontWeight = "700";
+          if (boldColor) fill = boldColor;
+        }
+        if (seg.type === "italic") {
+          fontStyle = "italic";
+          if (italicColor) fill = italicColor;
+        }
+
+        const width = measureTextWidth(text, fontSize, thisFontFamily);
+        if (seg.type === "code" && showInlineBg) {
+          const padX = 4;
+          const padY = 2;
+          const rectH = fontSize + padY * 2;
+          const rectY = y - fontSize - padY + 3;
+          const rectX = currentX - padX;
+          const fillAttr = bgColor && bgColor !== "#00000000" ? bgColor : "none";
+          shapes += `\n    <rect x="${rectX}" y="${rectY}" rx="3" ry="3" width="${width + padX * 2}" height="${rectH}" fill="${fillAttr}" stroke="${borderColor}" stroke-width="1" />`;
+        }
+
+        tspans += `\n    <tspan x="${currentX}" y="${y}" font-size="${fontSize}"`;
+        if (seg.type === "code") {
+          tspans += ` font-family="${monoFamily}"`;
+        }
+        if (fontWeight) {
+          tspans += ` font-weight="${fontWeight}"`;
+        }
+        if (fontStyle) {
+          tspans += ` font-style="${fontStyle}"`;
+        }
+        if (fill) {
+          tspans += ` fill="${fill}"`;
+        }
+        tspans += `>${escapeXML(text)}</tspan>`;
+
+        currentX += width;
+      });
+
+      return { tspans, shapes };
+    }
+
+    function renderCodeLine(line, lang, x, y, fontSize, defaultColor) {
+      const monoFamily =
+        "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace";
+      const fs = fontSize || 12;
+      const parts = line.split(/(\s+)/);
+      let s = "";
+      parts.forEach((part, idx) => {
+        if (part === "") return;
+        s += "\n    <tspan";
+        if (idx === 0) s += ` x="${x}" y="${y}"`;
+        s += ` font-family="${monoFamily}" font-size="${fs}"`;
+        const color = syntaxColorToken(part, lang) || defaultColor || null;
+        if (color) s += ` fill="${color}"`;
+        s += `>${escapeXML(part)}</tspan>`;
+      });
+      return s;
+    }
+
+    function renderMarkdownBlocks(blocks, textStartX, startY, baseLineHeight, contentWidth, font, styleOpts, bodyFontSize) {
+      let y = startY;
+      let tspans = "";
+      let shapes = "";
+      const bfs = bodyFontSize || 13;
+      const inlineStyles = styleOpts.inline || {};
+      const h1Color = styleOpts.h1Color || styleOpts.headingColor || null;
+      const h2Color = styleOpts.h2Color || styleOpts.headingColor || null;
+      const h3Color = styleOpts.h3Color || styleOpts.headingColor || null;
+      const bulletColor = styleOpts.bulletColor || null;
+      const quoteColor = styleOpts.quoteColor || null;
+      const paraColor = styleOpts.paraColor || null;
+      const codeBlockBg = styleOpts.codeBlockBg || "#161b22";
+      const codeBlockBorder = styleOpts.codeBlockBorder || "#30363d";
+      const codeTextColor = styleOpts.codeTextColor || null;
+      const showCodeBg = styleOpts.showCodeBg !== false;
+      const trimCodeWidth = styleOpts.trimCodeWidth !== false;
+      const letterSpacing = styleOpts.letterSpacing;
+
+      const h1Size = styleOpts.h1Size || bfs + 5;
+      const h2Size = styleOpts.h2Size || bfs + 3;
+      const h3Size = styleOpts.h3Size || bfs + 2;
+      const h1LH = styleOpts.h1LH || Math.round(baseLineHeight * 1.33);
+      const h2LH = styleOpts.h2LH || Math.round(baseLineHeight * 1.22);
+      const h3LH = styleOpts.h3LH || Math.round(baseLineHeight * 1.11);
+      const quoteSize = styleOpts.quoteSize || bfs;
+      const quoteIndent = styleOpts.quoteIndent != null ? styleOpts.quoteIndent : 10;
+      const listIndent = styleOpts.listIndent != null ? styleOpts.listIndent : 12;
+      const paraSize = styleOpts.paraSize || bfs;
+      const codeSize = styleOpts.codeSize || Math.max(10, bfs - 1);
+      const codePad = styleOpts.codePad != null ? styleOpts.codePad : 6;
+      const codeRadius = styleOpts.codeRadius != null ? styleOpts.codeRadius : 6;
+      const codeOffsetX = styleOpts.codeOffsetX || 0;
+      const codeOffsetY = styleOpts.codeOffsetY || 0;
+      const codeTextInset = styleOpts.codeTextInset || 0;
+      const codeGapY = styleOpts.codeGapY != null ? styleOpts.codeGapY : 2;
+      const codeMinW = styleOpts.codeMinW != null ? styleOpts.codeMinW : 40;
+
+      const monoFamily =
+        "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace";
+
+      function lsAttr() {
+        if (letterSpacing === undefined || letterSpacing === null || Number(letterSpacing) === 0) return "";
+        return ` letter-spacing="${letterSpacing}"`;
+      }
+
+      blocks.forEach((block) => {
+        if (block.type === "blank") {
+          y += baseLineHeight;
+          return;
+        }
+
+        if (block.type === "heading") {
+          const level = block.level;
+          const lh = level === 1 ? h1LH : level === 2 ? h2LH : level === 3 ? h3LH : baseLineHeight;
+          const fontSize = level === 1 ? h1Size : level === 2 ? h2Size : level === 3 ? h3Size : bfs + 1;
+          const hColor = level === 1 ? h1Color : level === 2 ? h2Color : h3Color;
+
+          const tokens = parseInlineMarkdown(block.text);
+          const res = renderInlineTokens(tokens, textStartX, y, fontSize, baseLineHeight, font, inlineStyles, hColor);
+          tspans += res.tspans;
+          shapes += res.shapes;
+          y += lh;
+          return;
+        }
+
+        if (block.type === "blockquote") {
+          const prefix = "▌ ";
+          const tokens = parseInlineMarkdown(block.text);
+          const indent = textStartX + quoteIndent;
+          const qFill = quoteColor ? ` fill="${quoteColor}"` : "";
+          tspans += `\n    <tspan x="${textStartX}" y="${y}" font-style="italic" font-size="${quoteSize}"${qFill}${lsAttr()}>${escapeXML(prefix)}</tspan>`;
+          const res = renderInlineTokens(tokens, indent, y, quoteSize, baseLineHeight, font, inlineStyles, quoteColor);
+          tspans += res.tspans;
+          shapes += res.shapes;
+          y += baseLineHeight;
+          return;
+        }
+
+        if (block.type === "listItem") {
+          const bullet = "• ";
+          const tokens = parseInlineMarkdown(block.text);
+          const indent = textStartX + listIndent;
+          const bFill = bulletColor ? ` fill="${bulletColor}"` : "";
+          tspans += `\n    <tspan x="${textStartX}" y="${y}" font-size="${paraSize}"${bFill}${lsAttr()}>${escapeXML(bullet)}</tspan>`;
+          const res = renderInlineTokens(tokens, indent, y, paraSize, baseLineHeight, font, inlineStyles, paraColor);
+          tspans += res.tspans;
+          shapes += res.shapes;
+          y += baseLineHeight;
+          return;
+        }
+
+        if (block.type === "code") {
+          const lh = baseLineHeight;
+          const lang = block.lang || "";
+          const codeFs = codeSize;
+          const lines = block.lines.length ? block.lines : [""];
+
+          // Measure content width when trim is on
+          let contentW = contentWidth;
+          if (trimCodeWidth) {
+            let maxW = 0;
+            lines.forEach((line) => {
+              maxW = Math.max(maxW, measureTextWidth(line || " ", codeFs, monoFamily));
+            });
+            contentW = Math.max(codeMinW, Math.min(contentWidth, Math.ceil(maxW)));
+          }
+
+          const pad = codePad;
+          const linesCount = Math.max(1, lines.length);
+          const rectH = linesCount * lh + pad * 2 - 4;
+          const baseX = textStartX + codeOffsetX;
+          const baseY = y + codeOffsetY;
+          const rectY = baseY - lh + 4;
+          const rectX = baseX - pad;
+          const rectW = contentW + pad * 2;
+          const textX = baseX + codeTextInset;
+
+          if (showCodeBg) {
+            shapes += `\n    <rect x="${rectX}" y="${rectY}" rx="${codeRadius}" ry="${codeRadius}" width="${rectW}" height="${rectH}" fill="${codeBlockBg}" stroke="${codeBlockBorder}" stroke-width="1" />`;
+          }
+
+          let innerY = baseY;
+          lines.forEach((line) => {
+            tspans += renderCodeLine(line, lang, textX, innerY, codeFs, codeTextColor);
+            innerY += lh;
+          });
+          y = rectY + rectH + codeGapY;
+          return;
+        }
+
+        if (block.type === "paragraph") {
+          const tokens = parseInlineMarkdown(block.text);
+          const res = renderInlineTokens(tokens, textStartX, y, paraSize, baseLineHeight, font, inlineStyles, paraColor);
+          tspans += res.tspans;
+          shapes += res.shapes;
+          y += baseLineHeight;
+          return;
+        }
+      });
+
+      return { tspans, shapes, endY: y };
+    }
+
+    function generateSVG() {
+      const paddingX = Math.max(0, Number(inputs.paddingX.value) || 0);
+      const paddingY = Math.max(0, Number(inputs.paddingY.value) || 0);
+      const width = Math.max(200, Number(inputs.width.value) || 520);
+      const borderWidth = Math.max(0, Number(inputs.borderWidth.value) || 0);
+      const cornerRadius = Math.max(0, Number(inputs.cornerRadius.value) || 0);
+      const iconSize = Math.max(8, Number(inputs.iconSize.value) || 20);
+      const iconGap = Math.max(0, Number(inputs.iconGap.value) || 32);
+      const titleFontSize = Math.max(8, Number(inputs.titleFontSize.value) || 16);
+      const bodyFontSize = Math.max(8, Number(inputs.bodyFontSize.value) || 13);
+      const baseLineHeight = Math.max(10, Number(inputs.lineHeight.value) || 18);
+      const titleOffsetY = Math.max(0, Number(inputs.titleOffsetY.value) || 18);
+      const bodyOffsetY = Math.max(0, Number(inputs.bodyOffsetY.value) || 36);
+      const titleWeight = inputs.titleWeight.value || "700";
+      const bodyWeight = inputs.bodyWeight.value || "400";
+      const letterSpacing = Number(inputs.letterSpacing.value) || 0;
+      const titleLetterSpacing = Number(inputs.titleLetterSpacing.value) || 0;
+      const bodyFontStyle = inputs.bodyFontStyle.value || "normal";
+      const titleTransform = inputs.titleTransform.value || "none";
+
+      const iconRaw = inputs.icon.value || "";
+      const showIcon = inputs.showIcon.checked && !!iconRaw;
+      const showTitle = inputs.showTitle.checked;
+      const showBody = inputs.showBody.checked;
+      const icon = showIcon ? iconRaw : "";
+      const title = showTitle
+        ? transformTitleText(inputs.title.value || "", titleTransform)
+        : "";
+      const body = showBody ? (inputs.body.value || "") : "";
+      const font = fontCSS(inputs.fontFamily.value);
+
+      const transparentBg = inputs.transparentBg.checked;
+      const invert = inputs.invertColors.checked;
+
+      let bg = inputs.bgColor.value;
+      let border = inputs.borderColor.value;
+      let titleColor = inputs.titleColor.value;
+      let iconColor = inputs.iconColor.value || titleColor;
+      let textColor = inputs.textColor.value;
+      let h1Color = (inputs.h1Color && inputs.h1Color.value) || textColor;
+      let h2Color = (inputs.h2Color && inputs.h2Color.value) || textColor;
+      let h3Color = (inputs.h3Color && inputs.h3Color.value) || textColor;
+      let bulletColor = inputs.bulletColor.value || textColor;
+      let quoteColor = inputs.quoteColor.value || textColor;
+      let paraColor = (inputs.paraColor && inputs.paraColor.value) || textColor;
+      let boldColor = (inputs.boldColor && inputs.boldColor.value) || textColor;
+      let italicColor = (inputs.italicColor && inputs.italicColor.value) || textColor;
+      let inlineCodeText = inputs.inlineCodeText.value || "#d2a8ff";
+      let inlineCodeBg = inputs.inlineCodeBg.value || "#161b22";
+      let inlineCodeBorder = inputs.inlineCodeBorder.value || "#30363d";
+      let codeBlockBg = inputs.codeBlockBg.value || "#161b22";
+      let codeBlockBorder = inputs.codeBlockBorder.value || "#30363d";
+      let codeTextColor = (inputs.codeTextColor && inputs.codeTextColor.value) || textColor;
+      let shadowColor = inputs.shadowColor.value || "#000000";
+
+      if (invert) {
+        if (!transparentBg) bg = invertHexColor(bg);
+        border = invertHexColor(border);
+        titleColor = invertHexColor(titleColor);
+        iconColor = invertHexColor(iconColor);
+        textColor = invertHexColor(textColor);
+        h1Color = invertHexColor(h1Color);
+        h2Color = invertHexColor(h2Color);
+        h3Color = invertHexColor(h3Color);
+        bulletColor = invertHexColor(bulletColor);
+        quoteColor = invertHexColor(quoteColor);
+        paraColor = invertHexColor(paraColor);
+        boldColor = invertHexColor(boldColor);
+        italicColor = invertHexColor(italicColor);
+        inlineCodeText = invertHexColor(inlineCodeText);
+        inlineCodeBg = invertHexColor(inlineCodeBg);
+        inlineCodeBorder = invertHexColor(inlineCodeBorder);
+        codeBlockBg = invertHexColor(codeBlockBg);
+        codeBlockBorder = invertHexColor(codeBlockBorder);
+        codeTextColor = invertHexColor(codeTextColor);
+      }
+
+      const blocks = showBody ? parseMarkdown(body) : [];
+      const gap = icon ? iconGap : 0;
+      const iconX = paddingX;
+      const iconY = paddingY + titleOffsetY;
+      const textStartX = paddingX + gap;
+      const titleY = paddingY + titleOffsetY;
+      const bodyStartY = paddingY + bodyOffsetY;
+      const contentWidth = Math.max(40, width - paddingX * 2 - gap);
+
+      const styleOpts = {
+        inline: {
+          bg: inlineCodeBg,
+          border: inlineCodeBorder,
+          text: inlineCodeText,
+          showBg: inputs.showInlineCodeBg.checked,
+          boldColor,
+          italicColor,
+        },
+        h1Color,
+        h2Color,
+        h3Color,
+        bulletColor,
+        quoteColor,
+        paraColor,
+        codeBlockBg,
+        codeBlockBorder,
+        codeTextColor,
+        showCodeBg: inputs.showCodeBg.checked,
+        trimCodeWidth: inputs.trimCodeWidth ? inputs.trimCodeWidth.checked : true,
+        bodyWeight,
+        bodyFontStyle,
+        letterSpacing,
+        h1Size: numOr(inputs.h1Size, 18),
+        h2Size: numOr(inputs.h2Size, 16),
+        h3Size: numOr(inputs.h3Size, 15),
+        h1LH: numOr(inputs.h1LH, 24),
+        h2LH: numOr(inputs.h2LH, 22),
+        h3LH: numOr(inputs.h3LH, 20),
+        quoteSize: numOr(inputs.quoteSize, bodyFontSize),
+        quoteIndent: numOr(inputs.quoteIndent, 10),
+        listIndent: numOr(inputs.listIndent, 12),
+        paraSize: numOr(inputs.paraSize, bodyFontSize),
+        codeSize: numOr(inputs.codeSize, 12),
+        codePad: numOr(inputs.codePad, 6),
+        codeRadius: numOr(inputs.codeRadius, 6),
+        codeOffsetX: numOr(inputs.codeOffsetX, 0),
+        codeOffsetY: numOr(inputs.codeOffsetY, 0),
+        codeTextInset: numOr(inputs.codeTextInset, 0),
+        codeGapY: numOr(inputs.codeGapY, 2),
+        codeMinW: numOr(inputs.codeMinW, 40),
+      };
+
+      const bodyRendered = renderMarkdownBlocks(
+        blocks,
+        textStartX,
+        bodyStartY,
+        baseLineHeight,
+        contentWidth,
+        font,
+        styleOpts,
+        bodyFontSize
+      );
+      const bodyTSpans = bodyRendered.tspans;
+      const bodyShapes = bodyRendered.shapes;
+
+      const contentBottom = showBody
+        ? (bodyRendered.endY || bodyStartY)
+        : (showTitle ? titleY + titleFontSize : paddingY + iconSize);
+      const autoHeight = Math.ceil(Math.max(contentBottom, titleY + titleFontSize) + paddingY);
+      const heightMode = inputs.heightMode.value;
+      const fixedH = Math.max(40, Number(inputs.heightFixed.value) || 120);
+      const height = heightMode === "fixed" ? fixedH : Math.max(40, autoHeight);
+
+      let borderRects = "";
+      if (borderWidth > 0) {
+        if (inputs.borderLeft.checked) {
+          borderRects += `\n  <rect x="0" y="0" width="${borderWidth}" height="${height}" fill="${border}" />`;
+        }
+        if (inputs.borderRight.checked) {
+          borderRects += `\n  <rect x="${width - borderWidth}" y="0" width="${borderWidth}" height="${height}" fill="${border}" />`;
+        }
+        if (inputs.borderTop.checked) {
+          borderRects += `\n  <rect x="0" y="0" width="${width}" height="${borderWidth}" fill="${border}" />`;
+        }
+        if (inputs.borderBottom.checked) {
+          borderRects += `\n  <rect x="0" y="${height - borderWidth}" width="${width}" height="${borderWidth}" fill="${border}" />`;
+        }
+      }
+
+      const shadowBlur = Math.max(0, Number(inputs.shadowBlur.value) || 0);
+      const filterId = "cardShadow";
+      let defs = "";
+      if (inputs.dropShadow.checked && shadowBlur > 0) {
+        defs = `
+  <defs>
+    <filter id="${filterId}" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="${shadowBlur / 3}" flood-color="${shadowColor}" flood-opacity="0.45"/>
+    </filter>
+  </defs>`;
+      }
+
+      const clipAttr = inputs.clipOverflow.checked
+        ? `\n  <defs><clipPath id="cardClip"><rect x="0" y="0" width="${width}" height="${height}" rx="${cornerRadius}" ry="${cornerRadius}"/></clipPath></defs>`
+        : "";
+      // merge defs if both
+      let allDefs = "";
+      if (inputs.dropShadow.checked && shadowBlur > 0 && inputs.clipOverflow.checked) {
+        allDefs = `
+  <defs>
+    <filter id="${filterId}" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="${shadowBlur / 3}" flood-color="${shadowColor}" flood-opacity="0.45"/>
+    </filter>
+    <clipPath id="cardClip"><rect x="0" y="0" width="${width}" height="${height}" rx="${cornerRadius}" ry="${cornerRadius}"/></clipPath>
+  </defs>`;
+      } else if (inputs.dropShadow.checked && shadowBlur > 0) {
+        allDefs = defs;
+      } else if (inputs.clipOverflow.checked) {
+        allDefs = clipAttr;
+      }
+
+      const filterAttr = inputs.dropShadow.checked && shadowBlur > 0 ? ` filter="url(#${filterId})"` : "";
+      const clipGroupOpen = inputs.clipOverflow.checked ? `\n  <g clip-path="url(#cardClip)">` : "";
+      const clipGroupClose = inputs.clipOverflow.checked ? `\n  </g>` : "";
+
+      const titleLs = titleLetterSpacing ? ` letter-spacing="${titleLetterSpacing}"` : "";
+      const bodyLs = letterSpacing ? ` letter-spacing="${letterSpacing}"` : "";
+      const bodyStyle = bodyFontStyle !== "normal" ? ` font-style="${bodyFontStyle}"` : "";
+      const bodyW = bodyWeight && bodyWeight !== "400" ? ` font-weight="${bodyWeight}"` : "";
+
+      const innerContent = `${borderRects}${clipGroupOpen}
+  <g font-family="${font}">
+    ${
+      icon
+        ? `<text x="${iconX}" y="${iconY}" font-size="${iconSize}" fill="${iconColor}" dominant-baseline="middle">${escapeXML(
+            icon
+          )}</text>`
+        : ""
+    }
+    ${
+      showTitle
+        ? `<text x="${textStartX}" y="${titleY}" font-size="${titleFontSize}" font-weight="${titleWeight}" fill="${titleColor}" dominant-baseline="middle"${titleLs}>
+      ${escapeXML(title)}
+    </text>`
+        : ""
+    }
+    ${showBody ? bodyShapes : ""}
+    ${
+      showBody
+        ? `<text font-size="${bodyFontSize}" fill="${textColor}"${bodyW}${bodyStyle}${bodyLs}>
+      ${bodyTSpans}
+    </text>`
+        : ""
+    }
+  </g>${clipGroupClose}`;
+
+      // Actionability (redirect / JS) — limited environments only
+      const act = getActionabilityConfig();
+      let actionOpen = "";
+      let actionClose = "";
+      let svgClickAttr = "";
+      if (act.redirect && act.url) {
+        actionOpen = `\n  <a href="${escapeXML(act.url)}" target="_blank" rel="noopener noreferrer">`;
+        actionClose = `\n  </a>`;
+      }
+      if (act.execute && act.js) {
+        // SVG onclick: only when inline; strip dangerous quotes carefully
+        const jsEsc = act.js
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, "&quot;")
+          .replace(/\r?\n/g, " ");
+        svgClickAttr = ` style="cursor:pointer" onclick="${jsEsc}"`;
+      } else if (act.redirect && act.url) {
+        svgClickAttr = ` style="cursor:pointer"`;
+      }
+
+      const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" role="img"${svgClickAttr}>
+  <title>${escapeXML(title || inputs.title.value || "Alert")}</title>
+  <desc>Generated markdown alert card</desc>${allDefs}
+  <rect x="0" y="0" width="${width}" height="${height}" rx="${cornerRadius}" ry="${cornerRadius}" fill="${transparentBg ? "none" : bg}"${filterAttr} />${actionOpen}${innerContent}${actionClose}
+</svg>`;
+
+      return svg.trim();
+    }
+
+    function getActionabilityConfig() {
+      const redirect = !!(inputs.actRedirect && inputs.actRedirect.checked);
+      const execute = !!(inputs.actExecute && inputs.actExecute.checked);
+      let url = (inputs.actUrl && inputs.actUrl.value || "").trim();
+      let js = (inputs.actJs && inputs.actJs.value || "").trim();
+      // Only allow http(s) redirects
+      if (url && !/^https?:\/\//i.test(url)) {
+        url = "";
+      }
+      // Cap JS size and strip HTML tags as a basic guard
+      if (js.length > 2000) js = js.slice(0, 2000);
+      js = js.replace(/<\/?script/gi, "");
+      return { redirect, execute, url, js };
+    }
+
+    function setMarkupViewMode() {
+      const isPng = markupFormat === "png";
+      if (inputs.codeEditor) inputs.codeEditor.classList.toggle("hidden", isPng);
+      if (inputs.markupPngView) inputs.markupPngView.classList.toggle("active", isPng);
+      if (inputs.btnCopy) inputs.btnCopy.disabled = isPng;
+      if (inputs.manualEdit) {
+        // PNG view: force non-manual for display; keep state
+        if (isPng) {
+          inputs.svgOutput.readOnly = true;
+        } else {
+          inputs.svgOutput.readOnly = !manualEditMode;
+        }
+      }
+    }
+
+    async function refreshPngView() {
+      if (markupFormat !== "png" || !lastSvg) return;
+      const blob = await downloadPNG();
+      if (!blob) return;
+      if (lastPngUrl) URL.revokeObjectURL(lastPngUrl);
+      lastPngUrl = URL.createObjectURL(blob);
+      if (inputs.markupPngImg) inputs.markupPngImg.src = lastPngUrl;
+    }
+
+    function refreshMarkupOutput() {
+      if (!lastSvg) return;
+      if (markupFormat === "png") {
+        if (inputs.markupModePill) inputs.markupModePill.textContent = "PNG";
+        setMarkupViewMode();
+        refreshPngView();
+        return;
+      }
+      setMarkupViewMode();
+      // Don't overwrite manual edits unless not in manual mode
+      if (!manualEditMode) {
+        if (markupFormat === "html") {
+          inputs.svgOutput.value = buildHTML(lastSvg);
+        } else {
+          inputs.svgOutput.value = lastSvg;
+        }
+      }
+      if (inputs.markupModePill) {
+        inputs.markupModePill.textContent = markupFormat === "html" ? "HTML" : "SVG";
+      }
+      updateHighlightFromTextarea();
+    }
+
+    function setMarkupFormat(fmt) {
+      if (fmt === "html") markupFormat = "html";
+      else if (fmt === "png") markupFormat = "png";
+      else markupFormat = "svg";
+
+      // Leaving manual mode content: when switching format, regenerate view from lastSvg
+      // (manual edits only make sense for the active text format)
+      if (fmt !== "png" && manualEditMode) {
+        // keep textarea as-is if switching between svg/html would be wrong — reset from lastSvg
+        manualEditMode = manualEditMode; // no-op
+      }
+
+      inputs.btnFmtSvg.classList.toggle("active", markupFormat === "svg");
+      inputs.btnFmtHtml.classList.toggle("active", markupFormat === "html");
+      if (inputs.btnFmtPng) inputs.btnFmtPng.classList.toggle("active", markupFormat === "png");
+
+      // Format switch always shows generated content for that format
+      if (markupFormat === "html") {
+        inputs.svgOutput.value = buildHTML(lastSvg);
+      } else if (markupFormat === "svg") {
+        inputs.svgOutput.value = lastSvg;
+      }
+      refreshMarkupOutput();
+    }
+
+    function extractSvgFromMarkup(text) {
+      if (!text) return null;
+      const t = text.trim();
+      if (t.includes("<svg")) {
+        const m = t.match(/<svg[\s\S]*?<\/svg>/i);
+        if (m) return m[0];
+      }
+      return null;
+    }
+
+    function updatePreview() {
+      if (manualEditMode && markupFormat !== "png") {
+        const raw = inputs.svgOutput.value;
+        const svg = extractSvgFromMarkup(raw);
+        if (!svg || !svg.includes("<svg")) {
+          showToast("⚠ Manual edit: no valid SVG found in markup");
+          return;
+        }
+        lastSvg = svg.trim();
+        inputs.preview.innerHTML = lastSvg;
+        updateHighlightFromTextarea();
+        showToast("✅ Preview updated from markup");
+        return;
+      }
+
+      const svg = generateSVG();
+      lastSvg = svg;
+      inputs.preview.innerHTML = svg;
+      refreshMarkupOutput();
+    }
+
+    function copyMarkup() {
+      if (markupFormat === "png") {
+        showToast("⚠ Switch to SVG or HTML to copy code");
+        return;
+      }
+      const text = inputs.svgOutput.value;
+      if (!text) return;
+      const label = markupFormat === "html" ? "HTML" : "SVG";
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(`✅ ${label} copied to clipboard`);
+      }).catch(() => {
+        showToast("⚠ Copy failed — check permissions");
+      });
+    }
+
+    async function downloadMarkup() {
+      if (markupFormat === "png") {
+        await downloadPNGFile();
+        showToast("✅ PNG downloaded");
+        return;
+      }
+      if (markupFormat === "html") {
+        const text = inputs.svgOutput.value || buildHTML(lastSvg);
+        downloadBlob(new Blob([text], { type: "text/html" }), "markdown-alert.html");
+        showToast("✅ HTML downloaded");
+        return;
+      }
+      const text = (manualEditMode ? inputs.svgOutput.value : null) || lastSvg;
+      if (!text) return;
+      downloadBlob(new Blob([text], { type: "image/svg+xml" }), "markdown-alert.svg");
+      showToast("✅ SVG downloaded");
+    }
+
+    function setManualEdit(on, opts) {
+      const silent = opts && opts.silent;
+      manualEditMode = !!on;
+      if (inputs.manualEdit) inputs.manualEdit.checked = manualEditMode;
+      if (markupFormat !== "png") {
+        inputs.svgOutput.readOnly = !manualEditMode;
+      }
+      if (manualEditMode) {
+        if (!silent) showToast("✏️ Manual edit ON — edit code, then Update");
+      } else {
+        // Resync from generator
+        if (markupFormat === "html") {
+          inputs.svgOutput.value = buildHTML(lastSvg);
+        } else if (markupFormat === "svg") {
+          inputs.svgOutput.value = lastSvg;
+        }
+        updateHighlightFromTextarea();
+        if (!silent) showToast("🔒 Manual edit OFF");
+      }
+    }
+
+    /* ─── Download helpers ─── */
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadSVG() {
+      const svg = lastSvg || inputs.svgOutput.value;
+      if (!svg) return;
+      downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "markdown-alert.svg");
+    }
+
+    function buildHTML(svg) {
+      const act = getActionabilityConfig();
+      let wrapOpen = "";
+      let wrapClose = "";
+      let script = "";
+      const handlers = [];
+      if (act.redirect && act.url) {
+        handlers.push(`window.open(${JSON.stringify(act.url)}, "_blank", "noopener,noreferrer");`);
+      }
+      if (act.execute && act.js) {
+        handlers.push(`try { ${act.js} } catch (e) { console.error(e); }`);
+      }
+      if (handlers.length) {
+        wrapOpen = `<div id="svg-alert-root" style="cursor:pointer;display:inline-block;" role="button" tabindex="0">`;
+        wrapClose = `</div>`;
+        script = `
+<script>
+(function(){
+  var el = document.getElementById("svg-alert-root");
+  if (!el) return;
+  function run(e){
+    ${handlers.join("\n    ")}
+  }
+  el.addEventListener("click", run);
+  el.addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); run(e); }
+  });
+})();
+<\/script>`;
+      }
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Markdown Alert</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #0d1117; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }
+  </style>
+</head>
+<body>
+${wrapOpen}
+${svg}
+${wrapClose}
+${script}
+</body>
+</html>`;
+    }
+
+    function downloadHTML() {
+      const svg = lastSvg || inputs.svgOutput.value;
+      if (!svg) return;
+      downloadBlob(new Blob([buildHTML(svg)], { type: "text/html" }), "markdown-alert.html");
+    }
+
+    function downloadPNG() {
+      return new Promise((resolve) => {
+        const svg = lastSvg || inputs.svgOutput.value;
+        if (!svg) { resolve(null); return; }
+
+        const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+
+          canvas.toBlob((blob) => {
+            resolve(blob);
+          }, "image/png");
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        };
+
+        img.src = url;
+      });
+    }
+
+    async function downloadPNGFile() {
+      const blob = await downloadPNG();
+      if (blob) downloadBlob(blob, "markdown-alert.png");
+    }
+
+    /* ─── Gather current state as JSON ─── */
+    function gatherProjectJSON() {
+      return {
+        _format: "svg-alert-studio",
+        _version: 3,
+        title: inputs.title.value,
+        icon: inputs.icon.value,
+        body: inputs.body.value,
+        width: inputs.width.value,
+        heightMode: inputs.heightMode.value,
+        heightFixed: inputs.heightFixed.value,
+        paddingX: inputs.paddingX.value,
+        paddingY: inputs.paddingY.value,
+        padding: inputs.paddingX.value,
+        bgColor: inputs.bgColor.value,
+        borderColor: inputs.borderColor.value,
+        titleColor: inputs.titleColor.value,
+        iconColor: inputs.iconColor.value,
+        textColor: inputs.textColor.value,
+        h1Color: inputs.h1Color && inputs.h1Color.value,
+        h2Color: inputs.h2Color && inputs.h2Color.value,
+        h3Color: inputs.h3Color && inputs.h3Color.value,
+        bulletColor: inputs.bulletColor.value,
+        quoteColor: inputs.quoteColor.value,
+        paraColor: inputs.paraColor && inputs.paraColor.value,
+        boldColor: inputs.boldColor && inputs.boldColor.value,
+        italicColor: inputs.italicColor && inputs.italicColor.value,
+        inlineCodeText: inputs.inlineCodeText.value,
+        inlineCodeBg: inputs.inlineCodeBg.value,
+        inlineCodeBorder: inputs.inlineCodeBorder.value,
+        codeBlockBg: inputs.codeBlockBg.value,
+        codeBlockBorder: inputs.codeBlockBorder.value,
+        codeTextColor: inputs.codeTextColor && inputs.codeTextColor.value,
+        shadowColor: inputs.shadowColor.value,
+        borderWidth: inputs.borderWidth.value,
+        fontFamily: inputs.fontFamily.value,
+        fontCustom: inputs.fontCustom.value,
+        titleWeight: inputs.titleWeight.value,
+        bodyWeight: inputs.bodyWeight.value,
+        letterSpacing: inputs.letterSpacing.value,
+        titleLetterSpacing: inputs.titleLetterSpacing.value,
+        bodyFontStyle: inputs.bodyFontStyle.value,
+        titleTransform: inputs.titleTransform.value,
+        cornerRadius: inputs.cornerRadius.value,
+        iconSize: inputs.iconSize.value,
+        iconGap: inputs.iconGap.value,
+        titleFontSize: inputs.titleFontSize.value,
+        bodyFontSize: inputs.bodyFontSize.value,
+        lineHeight: inputs.lineHeight.value,
+        titleOffsetY: inputs.titleOffsetY.value,
+        bodyOffsetY: inputs.bodyOffsetY.value,
+        h1Size: inputs.h1Size && inputs.h1Size.value,
+        h2Size: inputs.h2Size && inputs.h2Size.value,
+        h3Size: inputs.h3Size && inputs.h3Size.value,
+        h1LH: inputs.h1LH && inputs.h1LH.value,
+        h2LH: inputs.h2LH && inputs.h2LH.value,
+        h3LH: inputs.h3LH && inputs.h3LH.value,
+        quoteSize: inputs.quoteSize && inputs.quoteSize.value,
+        quoteIndent: inputs.quoteIndent && inputs.quoteIndent.value,
+        listIndent: inputs.listIndent && inputs.listIndent.value,
+        paraSize: inputs.paraSize && inputs.paraSize.value,
+        codeSize: inputs.codeSize && inputs.codeSize.value,
+        codePad: inputs.codePad && inputs.codePad.value,
+        codeRadius: inputs.codeRadius && inputs.codeRadius.value,
+        codeOffsetX: inputs.codeOffsetX && inputs.codeOffsetX.value,
+        codeOffsetY: inputs.codeOffsetY && inputs.codeOffsetY.value,
+        codeTextInset: inputs.codeTextInset && inputs.codeTextInset.value,
+        codeGapY: inputs.codeGapY && inputs.codeGapY.value,
+        codeMinW: inputs.codeMinW && inputs.codeMinW.value,
+        transparentBg: inputs.transparentBg.checked,
+        invertColors: inputs.invertColors.checked,
+        showIcon: inputs.showIcon.checked,
+        showTitle: inputs.showTitle.checked,
+        showBody: inputs.showBody.checked,
+        showCodeBg: inputs.showCodeBg.checked,
+        showInlineCodeBg: inputs.showInlineCodeBg.checked,
+        trimCodeWidth: inputs.trimCodeWidth && inputs.trimCodeWidth.checked,
+        dropShadow: inputs.dropShadow.checked,
+        clipOverflow: inputs.clipOverflow.checked,
+        shadowBlur: inputs.shadowBlur.value,
+        borderLeft: inputs.borderLeft.checked,
+        borderRight: inputs.borderRight.checked,
+        borderTop: inputs.borderTop.checked,
+        borderBottom: inputs.borderBottom.checked,
+        actRedirect: inputs.actRedirect && inputs.actRedirect.checked,
+        actUrl: inputs.actUrl && inputs.actUrl.value,
+        actExecute: inputs.actExecute && inputs.actExecute.checked,
+        actJs: inputs.actJs && inputs.actJs.value,
+      };
+    }
+
+    function applyProjectJSON(data, opts) {
+      const skipUpdate = opts && opts.skipUpdate;
+      const set = (key, el, isCheck) => {
+        if (data[key] === undefined || !el) return;
+        if (isCheck) el.checked = !!data[key];
+        else el.value = data[key];
+      };
+      set("title", inputs.title);
+      set("icon", inputs.icon);
+      set("body", inputs.body);
+      set("width", inputs.width);
+      set("heightMode", inputs.heightMode);
+      set("heightFixed", inputs.heightFixed);
+      if (data.paddingX !== undefined) inputs.paddingX.value = data.paddingX;
+      else if (data.padding !== undefined) inputs.paddingX.value = data.padding;
+      if (data.paddingY !== undefined) inputs.paddingY.value = data.paddingY;
+      else if (data.padding !== undefined) inputs.paddingY.value = data.padding;
+      set("bgColor", inputs.bgColor);
+      set("borderColor", inputs.borderColor);
+      set("titleColor", inputs.titleColor);
+      if (data.iconColor !== undefined) inputs.iconColor.value = data.iconColor;
+      else if (data.titleColor !== undefined) inputs.iconColor.value = data.titleColor;
+      set("textColor", inputs.textColor);
+      const headFallback = data.headingColor || data.textColor;
+      if (data.h1Color !== undefined) set("h1Color", inputs.h1Color);
+      else if (headFallback !== undefined && inputs.h1Color) inputs.h1Color.value = headFallback;
+      if (data.h2Color !== undefined) set("h2Color", inputs.h2Color);
+      else if (headFallback !== undefined && inputs.h2Color) inputs.h2Color.value = headFallback;
+      if (data.h3Color !== undefined) set("h3Color", inputs.h3Color);
+      else if (headFallback !== undefined && inputs.h3Color) inputs.h3Color.value = headFallback;
+      if (data.bulletColor !== undefined) inputs.bulletColor.value = data.bulletColor;
+      else if (data.textColor !== undefined) inputs.bulletColor.value = data.textColor;
+      set("quoteColor", inputs.quoteColor);
+      if (data.paraColor !== undefined) set("paraColor", inputs.paraColor);
+      else if (data.textColor !== undefined && inputs.paraColor) inputs.paraColor.value = data.textColor;
+      set("boldColor", inputs.boldColor);
+      set("italicColor", inputs.italicColor);
+      set("inlineCodeText", inputs.inlineCodeText);
+      set("inlineCodeBg", inputs.inlineCodeBg);
+      set("inlineCodeBorder", inputs.inlineCodeBorder);
+      set("codeBlockBg", inputs.codeBlockBg);
+      set("codeBlockBorder", inputs.codeBlockBorder);
+      set("codeTextColor", inputs.codeTextColor);
+      set("shadowColor", inputs.shadowColor);
+      set("borderWidth", inputs.borderWidth);
+      set("fontFamily", inputs.fontFamily);
+      set("fontCustom", inputs.fontCustom);
+      set("titleWeight", inputs.titleWeight);
+      set("bodyWeight", inputs.bodyWeight);
+      set("letterSpacing", inputs.letterSpacing);
+      set("titleLetterSpacing", inputs.titleLetterSpacing);
+      set("bodyFontStyle", inputs.bodyFontStyle);
+      set("titleTransform", inputs.titleTransform);
+      set("cornerRadius", inputs.cornerRadius);
+      set("iconSize", inputs.iconSize);
+      set("iconGap", inputs.iconGap);
+      set("titleFontSize", inputs.titleFontSize);
+      set("bodyFontSize", inputs.bodyFontSize);
+      set("lineHeight", inputs.lineHeight);
+      set("titleOffsetY", inputs.titleOffsetY);
+      set("bodyOffsetY", inputs.bodyOffsetY);
+      set("h1Size", inputs.h1Size);
+      set("h2Size", inputs.h2Size);
+      set("h3Size", inputs.h3Size);
+      set("h1LH", inputs.h1LH);
+      set("h2LH", inputs.h2LH);
+      set("h3LH", inputs.h3LH);
+      set("quoteSize", inputs.quoteSize);
+      set("quoteIndent", inputs.quoteIndent);
+      set("listIndent", inputs.listIndent);
+      set("paraSize", inputs.paraSize);
+      set("codeSize", inputs.codeSize);
+      set("codePad", inputs.codePad);
+      set("codeRadius", inputs.codeRadius);
+      set("codeOffsetX", inputs.codeOffsetX);
+      set("codeOffsetY", inputs.codeOffsetY);
+      set("codeTextInset", inputs.codeTextInset);
+      set("codeGapY", inputs.codeGapY);
+      set("codeMinW", inputs.codeMinW);
+      set("transparentBg", inputs.transparentBg, true);
+      set("invertColors", inputs.invertColors, true);
+      set("showIcon", inputs.showIcon, true);
+      set("showTitle", inputs.showTitle, true);
+      set("showBody", inputs.showBody, true);
+      set("showCodeBg", inputs.showCodeBg, true);
+      set("showInlineCodeBg", inputs.showInlineCodeBg, true);
+      set("trimCodeWidth", inputs.trimCodeWidth, true);
+      set("dropShadow", inputs.dropShadow, true);
+      set("clipOverflow", inputs.clipOverflow, true);
+      set("shadowBlur", inputs.shadowBlur);
+      set("borderLeft", inputs.borderLeft, true);
+      set("borderRight", inputs.borderRight, true);
+      set("borderTop", inputs.borderTop, true);
+      set("borderBottom", inputs.borderBottom, true);
+      set("actRedirect", inputs.actRedirect, true);
+      set("actUrl", inputs.actUrl);
+      set("actExecute", inputs.actExecute, true);
+      set("actJs", inputs.actJs);
+      syncHeightModeUI();
+      if (!skipUpdate) {
+        if (manualEditMode) setManualEdit(false, { silent: true });
+        updatePreview();
+      }
+    }
+
+    function syncHeightModeUI() {
+      const fixedField = $("height-fixed-field");
+      if (fixedField) {
+        fixedField.style.display = inputs.heightMode.value === "fixed" ? "flex" : "none";
+      }
+    }
+
+    /* ─── Export ─── */
+    function exportUserPresetsJSON() {
+      const payload = {
+        _format: "svg-alert-studio-presets",
+        _version: 1,
+        presets: loadUserPresets(),
+      };
+      return JSON.stringify(payload, null, 2);
+    }
+
+    async function doExport(format) {
+      closeModal('modal-export');
+
+      if (format === 'presets') {
+        const json = exportUserPresetsJSON();
+        downloadBlob(new Blob([json], { type: "application/json" }), "user-presets.json");
+        showToast('✅ User presets downloaded');
+        return;
+      }
+
+      const svg = lastSvg || inputs.svgOutput.value;
+      if (!svg) {
+        showToast('⚠ Generate a preview first');
+        return;
+      }
+
+      if (format === 'svg') {
+        downloadSVG();
+        showToast('✅ SVG downloaded');
+      } else if (format === 'html') {
+        downloadHTML();
+        showToast('✅ HTML downloaded');
+      } else if (format === 'png') {
+        await downloadPNGFile();
+        showToast('✅ PNG downloaded');
+      } else if (format === 'zip') {
+        await exportZip();
+      }
+    }
+
+    async function exportZip() {
+      const svg = lastSvg || inputs.svgOutput.value;
+      const html = buildHTML(svg);
+      const projectJson = JSON.stringify(gatherProjectJSON(), null, 2);
+      const userPresetsJson = exportUserPresetsJSON();
+      const pngBlob = await downloadPNG();
+
+      const files = [
+        { name: "markdown-alert.svg", data: new TextEncoder().encode(svg) },
+        { name: "markdown-alert.html", data: new TextEncoder().encode(html) },
+        { name: "project.json", data: new TextEncoder().encode(projectJson) },
+        { name: "user-presets.json", data: new TextEncoder().encode(userPresetsJson) },
+      ];
+
+      if (pngBlob) {
+        const pngData = new Uint8Array(await pngBlob.arrayBuffer());
+        files.push({ name: "markdown-alert.png", data: pngData });
+      }
+
+      const zipBlob = buildZip(files);
+      downloadBlob(zipBlob, "markdown-alert-export.zip");
+      showToast('✅ ZIP bundle downloaded');
+    }
+
+    /* ─── Minimal ZIP builder ─── */
+    function buildZip(files) {
+      const localHeaders = [];
+      const centralHeaders = [];
+      let offset = 0;
+
+      files.forEach(f => {
+        const nameBytes = new TextEncoder().encode(f.name);
+        const data = f.data;
+
+        // CRC32
+        const crc = crc32(data);
+
+        // Local file header
+        const lh = new ArrayBuffer(30 + nameBytes.length + data.length);
+        const lv = new DataView(lh);
+        const lu = new Uint8Array(lh);
+        lv.setUint32(0, 0x04034b50, true);  // signature
+        lv.setUint16(4, 20, true);           // version needed
+        lv.setUint16(6, 0, true);            // flags
+        lv.setUint16(8, 0, true);            // compression: store
+        lv.setUint16(10, 0, true);           // mod time
+        lv.setUint16(12, 0, true);           // mod date
+        lv.setUint32(14, crc, true);         // crc32
+        lv.setUint32(18, data.length, true); // compressed size
+        lv.setUint32(22, data.length, true); // uncompressed size
+        lv.setUint16(26, nameBytes.length, true); // name length
+        lv.setUint16(28, 0, true);           // extra field length
+        lu.set(nameBytes, 30);
+        lu.set(data, 30 + nameBytes.length);
+        localHeaders.push(lu);
+
+        // Central directory header
+        const ch = new ArrayBuffer(46 + nameBytes.length);
+        const cv = new DataView(ch);
+        const cu = new Uint8Array(ch);
+        cv.setUint32(0, 0x02014b50, true);   // signature
+        cv.setUint16(4, 20, true);            // version made by
+        cv.setUint16(6, 20, true);            // version needed
+        cv.setUint16(8, 0, true);             // flags
+        cv.setUint16(10, 0, true);            // compression
+        cv.setUint16(12, 0, true);            // mod time
+        cv.setUint16(14, 0, true);            // mod date
+        cv.setUint32(16, crc, true);          // crc32
+        cv.setUint32(20, data.length, true);  // compressed size
+        cv.setUint32(24, data.length, true);  // uncompressed size
+        cv.setUint16(28, nameBytes.length, true); // name length
+        cv.setUint16(30, 0, true);            // extra field length
+        cv.setUint16(32, 0, true);            // file comment length
+        cv.setUint16(34, 0, true);            // disk number start
+        cv.setUint16(36, 0, true);            // internal attrs
+        cv.setUint32(38, 0, true);            // external attrs
+        cv.setUint32(42, offset, true);       // offset of local header
+        cu.set(nameBytes, 46);
+        centralHeaders.push(cu);
+
+        offset += 30 + nameBytes.length + data.length;
+      });
+
+      const centralDirOffset = offset;
+      let centralDirSize = 0;
+      centralHeaders.forEach(c => centralDirSize += c.length);
+
+      // End of central directory
+      const eocd = new ArrayBuffer(22);
+      const ev = new DataView(eocd);
+      ev.setUint32(0, 0x06054b50, true);
+      ev.setUint16(4, 0, true);              // disk number
+      ev.setUint16(6, 0, true);              // disk with central dir
+      ev.setUint16(8, files.length, true);   // entries on this disk
+      ev.setUint16(10, files.length, true);  // total entries
+      ev.setUint32(12, centralDirSize, true);
+      ev.setUint32(16, centralDirOffset, true);
+      ev.setUint16(20, 0, true);             // comment length
+
+      return new Blob([...localHeaders, ...centralHeaders, eocd], { type: "application/zip" });
+    }
+
+    function crc32(data) {
+      let table = crc32.table;
+      if (!table) {
+        table = crc32.table = new Uint32Array(256);
+        for (let i = 0; i < 256; i++) {
+          let c = i;
+          for (let j = 0; j < 8; j++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+          }
+          table[i] = c;
+        }
+      }
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < data.length; i++) {
+        crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+      }
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    /* ─── Import ─── */
+    $('btn-import').addEventListener('click', () => {
+      $('import-file-input').click();
+    });
+
+    $('import-file-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      e.target.value = '';
+
+      const name = file.name.toLowerCase();
+
+      if (name.endsWith('.json')) {
+        const text = await file.text();
+        try {
+          const data = JSON.parse(text);
+          if (data._format === 'svg-alert-studio') {
+            applyProjectJSON(data);
+            showToast('✅ Project loaded from JSON');
+          } else if (data._format === 'svg-alert-studio-presets' || Array.isArray(data.presets)) {
+            importUserPresetsJSON(text);
+          } else {
+            showToast('⚠ Not a valid project file');
+          }
+        } catch {
+          showToast('⚠ Invalid JSON file');
+        }
+        return;
+      }
+
+      if (name.endsWith('.svg')) {
+        const text = await file.text();
+        importFromSVG(text);
+        return;
+      }
+
+      if (name.endsWith('.html') || name.endsWith('.htm')) {
+        const text = await file.text();
+        importFromHTML(text);
+        return;
+      }
+
+      if (name.endsWith('.zip')) {
+        await importFromZip(file);
+        return;
+      }
+
+      showToast('⚠ Unsupported file type');
+    });
+
+    function importFromSVG(svgText) {
+      // Try to extract settings from SVG attributes
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const svg = doc.querySelector('svg');
+      if (!svg) {
+        showToast('⚠ Could not parse SVG');
+        return;
+      }
+
+      // Extract what we can
+      const w = svg.getAttribute('width');
+      if (w) inputs.width.value = parseInt(w);
+
+      const titleEl = svg.querySelector('title');
+      if (titleEl) inputs.title.value = titleEl.textContent;
+
+      // Extract colors from the first rect (background)
+      const rects = svg.querySelectorAll('rect');
+      if (rects.length > 0) {
+        const bgFill = rects[0].getAttribute('fill');
+        if (bgFill && bgFill !== 'none') {
+          inputs.bgColor.value = bgFill;
+          inputs.transparentBg.checked = false;
+        } else {
+          inputs.transparentBg.checked = true;
+        }
+        const rx = rects[0].getAttribute('rx');
+        if (rx) inputs.cornerRadius.value = parseInt(rx);
+      }
+      if (rects.length > 1) {
+        const borderFill = rects[1].getAttribute('fill');
+        if (borderFill) inputs.borderColor.value = borderFill;
+        const bw = rects[1].getAttribute('width');
+        if (bw) inputs.borderWidth.value = parseInt(bw);
+      }
+
+      // Extract title color from first text with font-weight 700
+      const texts = svg.querySelectorAll('text');
+      texts.forEach(t => {
+        if (t.getAttribute('font-weight') === '700') {
+          const fill = t.getAttribute('fill');
+          if (fill) {
+            inputs.titleColor.value = fill;
+          }
+        }
+        if (t.getAttribute('font-size') === '13') {
+          const fill = t.getAttribute('fill');
+          if (fill) inputs.textColor.value = fill;
+        }
+      });
+
+      updatePreview();
+      showToast('✅ SVG imported (partial — edit settings as needed)');
+    }
+
+    function importFromHTML(htmlText) {
+      // Extract SVG from the HTML
+      const match = htmlText.match(/<svg[\s\S]*?<\/svg>/i);
+      if (match) {
+        importFromSVG(match[0]);
+      } else {
+        showToast('⚠ No SVG found in HTML file');
+      }
+    }
+
+    async function importFromZip(file) {
+      try {
+        const buffer = await file.arrayBuffer();
+        const entries = parseZip(buffer);
+
+        // Merge user presets if present
+        const presetsEntry = entries.find(e => e.name.endsWith('user-presets.json') || e.name.endsWith('presets.json'));
+        if (presetsEntry) {
+          try {
+            const text = new TextDecoder().decode(presetsEntry.data);
+            importUserPresetsJSON(text, { silent: true });
+          } catch (e) { /* ignore */ }
+        }
+
+        // Look for project.json first
+        const jsonEntry = entries.find(e => e.name.endsWith('project.json'));
+        if (jsonEntry) {
+          const text = new TextDecoder().decode(jsonEntry.data);
+          const data = JSON.parse(text);
+          if (data._format === 'svg-alert-studio') {
+            applyProjectJSON(data);
+            showToast('✅ Project loaded from ZIP');
+            return;
+          }
+        }
+
+        // Fallback: look for SVG
+        const svgEntry = entries.find(e => e.name.endsWith('.svg'));
+        if (svgEntry) {
+          const text = new TextDecoder().decode(svgEntry.data);
+          importFromSVG(text);
+          return;
+        }
+
+        showToast('⚠ No project.json or SVG found in ZIP');
+      } catch (err) {
+        console.error(err);
+        showToast('⚠ Failed to read ZIP file');
+      }
+    }
+
+    /* ─── Minimal ZIP reader (store-only) ─── */
+    function parseZip(buffer) {
+      const view = new DataView(buffer);
+      const u8 = new Uint8Array(buffer);
+      const entries = [];
+
+      // Find EOCD
+      let eocdOffset = -1;
+      for (let i = buffer.byteLength - 22; i >= 0; i--) {
+        if (view.getUint32(i, true) === 0x06054b50) {
+          eocdOffset = i;
+          break;
+        }
+      }
+      if (eocdOffset === -1) return entries;
+
+      const centralDirOffset = view.getUint32(eocdOffset + 16, true);
+      const numEntries = view.getUint16(eocdOffset + 10, true);
+
+      let pos = centralDirOffset;
+      for (let i = 0; i < numEntries; i++) {
+        if (view.getUint32(pos, true) !== 0x02014b50) break;
+
+        const nameLen = view.getUint16(pos + 28, true);
+        const extraLen = view.getUint16(pos + 30, true);
+        const commentLen = view.getUint16(pos + 32, true);
+        const localOffset = view.getUint32(pos + 42, true);
+        const name = new TextDecoder().decode(u8.slice(pos + 46, pos + 46 + nameLen));
+
+        // Read local header to get data
+        const localNameLen = view.getUint16(localOffset + 26, true);
+        const localExtraLen = view.getUint16(localOffset + 28, true);
+        const compressedSize = view.getUint32(localOffset + 18, true);
+        const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+        const data = u8.slice(dataStart, dataStart + compressedSize);
+
+        entries.push({ name, data });
+        pos += 46 + nameLen + extraLen + commentLen;
+      }
+
+      return entries;
+    }
+
+    /* ─── Export button ─── */
+    $('btn-export').addEventListener('click', () => openModal('modal-export'));
+
+    /* ─── Presets ─── */
+    const DEFAULT_PRESETS = [
+      { id: "success", name: "Success", icon: "✔", title: "Success", bgColor: "#0d1117", borderColor: "#3fb950", titleColor: "#3fb950", iconColor: "#3fb950", textColor: "#c9d1d9" },
+      { id: "warning", name: "Warning", icon: "⚠", title: "Warning", bgColor: "#1a1410", borderColor: "#f0883e", titleColor: "#f0883e", iconColor: "#f0883e", textColor: "#f0f6fc" },
+      { id: "error", name: "Error", icon: "⛔", title: "Error", bgColor: "#18070a", borderColor: "#f85149", titleColor: "#f85149", iconColor: "#f85149", textColor: "#f0f6fc" },
+      { id: "info", name: "Info", icon: "💡", title: "Info", bgColor: "#05121c", borderColor: "#58a6ff", titleColor: "#58a6ff", iconColor: "#58a6ff", textColor: "#c9d1d9" },
+      { id: "note", name: "Note", icon: "📝", title: "Note", bgColor: "#0d1117", borderColor: "#8b949e", titleColor: "#c9d1d9", iconColor: "#8b949e", textColor: "#c9d1d9" },
+      { id: "tip", name: "Tip", icon: "✨", title: "Tip", bgColor: "#0b1520", borderColor: "#39d353", titleColor: "#39d353", iconColor: "#39d353", textColor: "#c9d1d9" },
+      { id: "important", name: "Important", icon: "❗", title: "Important", bgColor: "#1a0f1e", borderColor: "#a371f7", titleColor: "#a371f7", iconColor: "#a371f7", textColor: "#f0f6fc" },
+      { id: "caution", name: "Caution", icon: "☢", title: "Caution", bgColor: "#1c1200", borderColor: "#d29922", titleColor: "#e3b341", iconColor: "#e3b341", textColor: "#f0f6fc" },
+      { id: "critical", name: "Critical", icon: "🔥", title: "Critical", bgColor: "#1f0a0a", borderColor: "#ff7b72", titleColor: "#ff7b72", iconColor: "#ff7b72", textColor: "#f0f6fc" },
+      { id: "debug", name: "Debug", icon: "🐛", title: "Debug", bgColor: "#0d1117", borderColor: "#79c0ff", titleColor: "#79c0ff", iconColor: "#79c0ff", textColor: "#c9d1d9" },
+      { id: "security", name: "Security", icon: "🛡", title: "Security", bgColor: "#0a1210", borderColor: "#3fb950", titleColor: "#56d364", iconColor: "#56d364", textColor: "#c9d1d9" },
+      { id: "api", name: "API", icon: "🔌", title: "API", bgColor: "#0b1020", borderColor: "#388bfd", titleColor: "#58a6ff", iconColor: "#58a6ff", textColor: "#c9d1d9" },
+      { id: "deploy", name: "Deploy", icon: "🚀", title: "Deploy", bgColor: "#0d1117", borderColor: "#f778ba", titleColor: "#f778ba", iconColor: "#f778ba", textColor: "#f0f6fc" },
+      { id: "docs", name: "Docs", icon: "📚", title: "Documentation", bgColor: "#0d1117", borderColor: "#a5d6ff", titleColor: "#a5d6ff", iconColor: "#79c0ff", textColor: "#c9d1d9" },
+      { id: "todo", name: "Todo", icon: "☐", title: "Todo", bgColor: "#111318", borderColor: "#6e7681", titleColor: "#e6edf3", iconColor: "#8b949e", textColor: "#c9d1d9" },
+      { id: "done", name: "Done", icon: "✅", title: "Done", bgColor: "#0d1610", borderColor: "#3fb950", titleColor: "#3fb950", iconColor: "#3fb950", textColor: "#c9d1d9" },
+      { id: "purple", name: "Purple", icon: "💜", title: "Highlight", bgColor: "#120d1a", borderColor: "#bc8cff", titleColor: "#bc8cff", iconColor: "#d2a8ff", textColor: "#e6edf3" },
+      { id: "cyan", name: "Cyan", icon: "💠", title: "Cyan", bgColor: "#071418", borderColor: "#39c5cf", titleColor: "#39c5cf", iconColor: "#39c5cf", textColor: "#c9d1d9" },
+      { id: "pink", name: "Pink", icon: "💗", title: "Pink", bgColor: "#1a0d14", borderColor: "#ff9bce", titleColor: "#ff9bce", iconColor: "#ff9bce", textColor: "#f0f6fc" },
+      { id: "mono", name: "Monochrome", icon: "●", title: "Notice", bgColor: "#0d1117", borderColor: "#e6edf3", titleColor: "#e6edf3", iconColor: "#e6edf3", textColor: "#c9d1d9" },
+      { id: "light", name: "Light", icon: "☀", title: "Note", bgColor: "#f6f8fa", borderColor: "#0969da", titleColor: "#0969da", iconColor: "#0969da", textColor: "#1f2328", headingColor: "#1f2328", bulletColor: "#1f2328", quoteColor: "#656d76", codeBlockBg: "#eff1f3", codeBlockBorder: "#d0d7de", inlineCodeBg: "#eff1f3", inlineCodeBorder: "#d0d7de", inlineCodeText: "#0550ae" },
+      { id: "glass", name: "Glass", icon: "◇", title: "Glass", bgColor: "#161b22", borderColor: "#58a6ff", titleColor: "#58a6ff", iconColor: "#79c0ff", textColor: "#c9d1d9", transparentBg: false },
+      { id: "github", name: "GitHub", icon: "★", title: "GitHub", bgColor: "#0d1117", borderColor: "#238636", titleColor: "#3fb950", iconColor: "#3fb950", textColor: "#c9d1d9" },
+      { id: "slack", name: "Announcement", icon: "📢", title: "Announcement", bgColor: "#0d1117", borderColor: "#e3b341", titleColor: "#e3b341", iconColor: "#e3b341", textColor: "#f0f6fc" },
+    ];
+
+    let presetTab = "default";
+
+    function loadUserPresets() {
+      try {
+        const raw = localStorage.getItem(USER_PRESETS_KEY);
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveUserPresets(list) {
+      localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(list));
+    }
+
+    function applyPresetConfig(cfg) {
+      if (!cfg) return;
+      // Apply only known fields via project JSON path
+      applyProjectJSON(cfg);
+    }
+
+    function renderPresetCards() {
+      const host = $("preset-cards");
+      const toolbar = $("preset-toolbar-user");
+      if (!host) return;
+      host.innerHTML = "";
+      if (toolbar) toolbar.style.display = presetTab === "user" ? "flex" : "none";
+
+      if (presetTab === "default") {
+        DEFAULT_PRESETS.forEach((p) => {
+          host.appendChild(makePresetCard(p, false));
+        });
+      } else {
+        const user = loadUserPresets();
+        if (!user.length) {
+          host.innerHTML = '<div class="preset-empty">No user presets yet.<br/>Configure your alert, then click <strong>Add as preset</strong>.</div>';
+          return;
+        }
+        user.forEach((p) => host.appendChild(makePresetCard(p, true)));
+      }
+    }
+
+    function makePresetCard(p, isUser) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "preset-card" + (isUser ? " user-preset" : "");
+      btn.style.setProperty("--card-accent", p.borderColor || p.titleColor || "#3fb950");
+      btn.innerHTML = `
+        <span class="pc-icon">${p.icon || "●"}</span>
+        <span class="pc-name">${escapeXML(p.name || p.title || "Preset")}</span>
+        <span class="pc-swatch"></span>
+        ${isUser ? '<span class="pc-delete" title="Delete">✕</span>' : ""}
+      `;
+      btn.addEventListener("click", (e) => {
+        if (e.target.closest(".pc-delete")) {
+          e.stopPropagation();
+          deleteUserPreset(p.id);
+          return;
+        }
+        applyPresetConfig(p);
+        closeModal("modal-presets");
+        showToast(`✅ ${p.name || "Preset"} applied`);
+      });
+      return btn;
+    }
+
+    function deleteUserPreset(id) {
+      const list = loadUserPresets().filter((p) => p.id !== id);
+      saveUserPresets(list);
+      renderPresetCards();
+      showToast("🗑 Preset deleted");
+    }
+
+    function addCurrentAsUserPreset() {
+      const name = prompt("Preset name:", inputs.title.value || "My preset");
+      if (!name) return;
+      const data = gatherProjectJSON();
+      delete data._format;
+      delete data._version;
+      delete data.body; // keep body optional — include body for full snapshot
+      data.body = inputs.body.value;
+      data.name = name.trim();
+      data.id = "user-" + Date.now().toString(36);
+      const list = loadUserPresets();
+      list.unshift(data);
+      saveUserPresets(list);
+      presetTab = "user";
+      document.querySelectorAll("#preset-tabs .modal-tab").forEach((t) => {
+        t.classList.toggle("active", t.getAttribute("data-preset-tab") === "user");
+      });
+      renderPresetCards();
+      showToast("✅ Saved to User presets");
+    }
+
+    function importUserPresetsJSON(text, opts) {
+      const silent = opts && opts.silent;
+      try {
+        const data = JSON.parse(text);
+        let incoming = [];
+        if (data._format === "svg-alert-studio-presets" && Array.isArray(data.presets)) {
+          incoming = data.presets;
+        } else if (Array.isArray(data.presets)) {
+          incoming = data.presets;
+        } else if (Array.isArray(data)) {
+          incoming = data;
+        } else {
+          if (!silent) showToast("⚠ Invalid presets file");
+          return;
+        }
+        const existing = loadUserPresets();
+        const byId = new Map(existing.map((p) => [p.id, p]));
+        incoming.forEach((p) => {
+          if (!p || typeof p !== "object") return;
+          const id = p.id || "user-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          byId.set(id, { ...p, id });
+        });
+        saveUserPresets(Array.from(byId.values()));
+        if (!silent) showToast(`✅ Imported ${incoming.length} user preset(s)`);
+      } catch {
+        if (!silent) showToast("⚠ Failed to import presets");
+      }
+    }
+
+    inputs.btnPresets.addEventListener("click", () => {
+      openModal("modal-presets");
+      renderPresetCards();
+    });
+
+    document.querySelectorAll("#preset-tabs .modal-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        presetTab = tab.getAttribute("data-preset-tab") || "default";
+        document.querySelectorAll("#preset-tabs .modal-tab").forEach((t) => {
+          t.classList.toggle("active", t === tab);
+        });
+        renderPresetCards();
+      });
+    });
+
+    const btnAddPreset = $("btn-add-preset");
+    if (btnAddPreset) btnAddPreset.addEventListener("click", addCurrentAsUserPreset);
+
+    /* ─── Icon picker ─── */
+    const ICON_SETS = {
+      symbols: [
+        "✔","✓","✕","✖","✗","⚠","⛔","🚫","❗","❓","ℹ","💡","★","☆","●","○",
+        "◆","◇","■","□","▲","▼","▶","◀","→","←","↑","↓","↔","⇒","⇐","•",
+        "◦","▪","▫","✦","✧","✪","❖","⊕","⊗","✓","✗","＋","−","±","∞","≠",
+        "≈","≤","≥","√","∑","∏","°","©","®","™","§","¶","†","‡","…","·",
+      ],
+      emoji: [
+        "✅","❌","⚠️","🚫","💯","🔥","⭐","🌟","✨","💫","🎉","🎊","🚀","💻","🖥️","⌨️",
+        "📱","🛠️","🔧","⚙️","📦","📁","📂","📄","📝","📌","📎","🔗","🔒","🔓","🔑","🛡️",
+        "🐛","🧪","📊","📈","📉","🧠","🤖","👾","💬","📢","🔔","🔕","❤️","💙","💚","💛",
+        "💜","🖤","🤍","🧡","👍","👎","👏","🙌","👋","🤝","💪","👀","🎯","🏆","🥇","🥈",
+        "🥉","⚡","🌈","☀️","🌙","❄️","🌊","🌍","🗺️","🏠","🏢","☁️","💾","🗄️","🧩","🎨",
+        "🖌️","✏️","🖊️","🔍","🔎","⏱️","⏳","📅","🧭","🪙","💰","🎁","📮","✉️","📬","📥",
+      ],
+      icons: [
+        "ℹ","⚠","⚡","⚙","⚒","⚓","⚔","⚖","⚗","⚙","⚛","⚜","⚙","♿","⚕","♻",
+        "☢","☣","☪","☮","☯","✝","☦","☸","✡","🔯","🕎","✝","†","‡","※","⁂",
+        "⌘","⌥","⌃","⇧","⇪","⌫","⌦","⏎","⎋","⇥","⇤","␣","↖","↗","↘","↙",
+        "◉","◎","◈","▣","▤","▥","▦","▧","▨","▩","▪","▫","▬","▭","▮","▯",
+        "▰","▱","▲","△","▴","▵","▶","▷","▸","▹","►","▻","▼","▽","▾","▿",
+        "◀","◁","◂","◃","◄","◅","◆","◇","◈","◉","◊","○","◌","◍","◎","●",
+        "◐","◑","◒","◓","◔","◕","◖","◗","◘","◙","◚","◛","◜","◝","◞","◟",
+        "◠","◡","◢","◣","◤","◥","◦","◧","◨","◩","◪","◫","◬","◭","◮","◯",
+      ],
+    };
+
+    let pickerTab = "symbols";
+
+    function renderPickerGrid(filter) {
+      const grid = $("picker-grid");
+      if (!grid) return;
+      const q = (filter || "").trim().toLowerCase();
+      const items = ICON_SETS[pickerTab] || [];
+      grid.innerHTML = "";
+      items.forEach((sym) => {
+        if (q && !sym.includes(q)) return;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "picker-cell";
+        btn.textContent = sym;
+        btn.title = sym;
+        btn.addEventListener("click", () => {
+          inputs.icon.value = sym;
+          closeModal("modal-icon-picker");
+          updatePreview();
+          showToast("✅ Icon set");
+        });
+        grid.appendChild(btn);
+      });
+      if (!grid.children.length) {
+        grid.innerHTML = '<div style="grid-column:1/-1;color:#6e7681;font-size:12px;padding:12px;text-align:center;">No matches</div>';
+      }
+    }
+
+    function openIconPicker() {
+      pickerTab = "symbols";
+      document.querySelectorAll("#picker-tabs .picker-tab").forEach((t) => {
+        t.classList.toggle("active", t.getAttribute("data-tab") === pickerTab);
+      });
+      const search = $("picker-search");
+      if (search) search.value = "";
+      renderPickerGrid("");
+      openModal("modal-icon-picker");
+      if (search) setTimeout(() => search.focus(), 50);
+    }
+
+    inputs.btnIconPicker.addEventListener("click", openIconPicker);
+
+    document.querySelectorAll("#picker-tabs .picker-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        pickerTab = tab.getAttribute("data-tab");
+        document.querySelectorAll("#picker-tabs .picker-tab").forEach((t) => {
+          t.classList.toggle("active", t === tab);
+        });
+        renderPickerGrid(($("picker-search") || {}).value || "");
+      });
+    });
+
+    const pickerSearch = $("picker-search");
+    if (pickerSearch) {
+      pickerSearch.addEventListener("input", () => renderPickerGrid(pickerSearch.value));
+    }
+
+    /* ─── Event Listeners ─── */
+    inputs.btnUpdate.addEventListener("click", updatePreview);
+    inputs.btnCopy.addEventListener("click", copyMarkup);
+    if (inputs.btnDownload) inputs.btnDownload.addEventListener("click", downloadMarkup);
+
+    inputs.btnFmtSvg.addEventListener("click", () => setMarkupFormat("svg"));
+    inputs.btnFmtHtml.addEventListener("click", () => setMarkupFormat("html"));
+    if (inputs.btnFmtPng) inputs.btnFmtPng.addEventListener("click", () => setMarkupFormat("png"));
+
+    if (inputs.manualEdit) {
+      inputs.manualEdit.addEventListener("change", () => {
+        setManualEdit(inputs.manualEdit.checked);
+      });
+    }
+
+    inputs.svgOutput.addEventListener("scroll", syncHighlightScroll);
+    inputs.svgOutput.addEventListener("input", () => {
+      if (manualEditMode) updateHighlightFromTextarea();
+    });
+
+    // Local font upload
+    if (inputs.btnFontUpload && inputs.localFontInput) {
+      inputs.btnFontUpload.addEventListener("click", () => inputs.localFontInput.click());
+      inputs.localFontInput.addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = "";
+        if (!file) return;
+        try {
+          const buffer = await file.arrayBuffer();
+          const family = "UserLocalFont";
+          // Replace previous face if any
+          const face = new FontFace(family, buffer);
+          await face.load();
+          document.fonts.add(face);
+          localFontFamily = family;
+          localFontDisplayName = file.name;
+          if (inputs.localFontName) inputs.localFontName.textContent = file.name;
+          inputs.fontFamily.value = "local";
+          updatePreview();
+          showToast("✅ Local font loaded for this session");
+        } catch (err) {
+          console.error(err);
+          showToast("⚠ Failed to load font");
+        }
+      });
+    }
+
+    inputs.heightMode.addEventListener("change", () => {
+      syncHeightModeUI();
+      if (!manualEditMode) updatePreview();
+    });
+
+    // Actionability button
+    const btnAct = $("btn-actionability");
+    if (btnAct) {
+      btnAct.addEventListener("click", () => openModal("modal-actionability"));
+    }
+    ["actRedirect", "actUrl", "actExecute", "actJs"].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener("change", () => { if (!manualEditMode) updatePreview(); });
+      el.addEventListener("input", () => { if (!manualEditMode) updatePreview(); });
+    });
+
+    const LIVE_INPUT_IDS = [
+      "title", "icon", "body", "width", "heightFixed",
+      "paddingX", "paddingY",
+      "bgColor", "borderColor", "titleColor", "iconColor", "textColor",
+      "h1Color", "h2Color", "h3Color", "bulletColor", "quoteColor",
+      "paraColor", "boldColor", "italicColor",
+      "inlineCodeText", "inlineCodeBg", "inlineCodeBorder",
+      "codeBlockBg", "codeBlockBorder", "codeTextColor", "shadowColor",
+      "borderWidth", "fontFamily", "fontCustom", "cornerRadius",
+      "titleWeight", "bodyWeight", "letterSpacing", "titleLetterSpacing",
+      "bodyFontStyle", "titleTransform",
+      "iconSize", "iconGap", "titleFontSize", "bodyFontSize",
+      "lineHeight", "titleOffsetY", "bodyOffsetY",
+      "h1Size", "h2Size", "h3Size", "h1LH", "h2LH", "h3LH",
+      "quoteSize", "quoteIndent", "listIndent", "paraSize",
+      "codeSize", "codePad", "codeRadius", "codeOffsetX", "codeOffsetY",
+      "codeTextInset", "codeGapY", "codeMinW",
+      "transparentBg", "invertColors", "showIcon", "showTitle", "showBody",
+      "showCodeBg", "showInlineCodeBg", "trimCodeWidth",
+      "dropShadow", "clipOverflow", "shadowBlur",
+      "borderLeft", "borderRight", "borderTop", "borderBottom",
+    ];
+
+    LIVE_INPUT_IDS.forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      const handler = () => {
+        if (manualEditMode) return; // don't overwrite manual markup
+        updatePreview();
+      };
+      el.addEventListener("input", handler);
+      el.addEventListener("change", handler);
+    });
+
+    // Keyboard shortcut: Escape to close modals
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+        ddOther.classList.remove('active');
+      }
+    });
+
+    // Init
+    syncHeightModeUI();
+    updatePreview();
+  </script>
+</body>
+</html>
